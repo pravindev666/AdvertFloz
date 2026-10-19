@@ -11,18 +11,40 @@ import type { Env } from "../env";
 
 const GRAPH = (env: Env, path: string) => `https://graph.facebook.com/${env.META_GRAPH_VERSION}/${path}`;
 
-async function exchange(env: Env, code: string, verifier: string): Promise<any | null> {
-  const body = new URLSearchParams({
+async function exchange(env: Env, code: string, verifier: string): Promise<{ payload?: any; error?: string }> {
+  const params = new URLSearchParams({
     client_id: env.META_APP_ID,
     client_secret: env.META_APP_SECRET,
     redirect_uri: env.META_OAUTH_REDIRECT_URI,
     code,
   });
-  if (verifier) body.set("code_verifier", verifier);
-  const response = await fetch(GRAPH(env, "oauth/access_token"), { method: "POST", body });
-  if (!response.ok) return null;
-  const payload: any = await response.json();
-  return payload?.access_token ? payload : null;
+  if (verifier) params.set("code_verifier", verifier);
+
+  let response = await fetch(`${GRAPH(env, "oauth/access_token")}?${params.toString()}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+
+  if (!response.ok) {
+    const postResponse = await fetch(GRAPH(env, "oauth/access_token"), {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: params.toString(),
+    });
+    if (postResponse.ok) {
+      response = postResponse;
+    }
+  }
+
+  const text = await response.text();
+  try {
+    const json = JSON.parse(text);
+    if (json?.access_token) return { payload: json };
+    const err = json?.error?.message ? `[Code ${json.error.code ?? ""}] ${json.error.message}` : text;
+    return { error: err };
+  } catch {
+    return { error: text };
+  }
 }
 
 export async function handleOAuthCallback(request: Request, env: Env): Promise<Response> {
@@ -44,11 +66,12 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
   if (!code) return html("Missing authorization code.", 400);
 
   const token = await exchange(env, code, row.code_verifier);
-  if (!token) return html("The authorization code could not be exchanged.", 400);
+  if (!token.payload) return html(`The authorization code could not be exchanged: ${token.error}`, 400);
+  const data = token.payload;
 
-  const sealed = await sealToken(token.access_token, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
+  const sealed = await sealToken(data.access_token, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
   const now = new Date().toISOString();
-  const expiresAt = token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString() : "";
+  const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString() : "";
 
   await env.DB.prepare(
     `INSERT INTO connections (provider, auth_flow, state, account_id, account_name, page_id, page_name, scopes,
@@ -59,7 +82,7 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
        issued_at=excluded.issued_at, expires_at=excluded.expires_at, last_validated_at=excluded.last_validated_at,
        key_id=excluded.key_id, updated_at=excluded.updated_at`,
   )
-    .bind(row.provider, token.scope ?? "", now, expiresAt, now, sealed.keyId, now)
+    .bind(row.provider, data.scope ?? "", now, expiresAt, now, sealed.keyId, now)
     .run();
 
   const connection = await env.DB.prepare("SELECT connection_id FROM connections WHERE provider = ?")

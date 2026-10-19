@@ -37,7 +37,7 @@ export default {
       authorize.searchParams.set("code_challenge", challenge);
       authorize.searchParams.set("code_challenge_method", "S256");
       authorize.searchParams.set("response_type", "code");
-      authorize.searchParams.set("scope", "pages_show_list,pages_manage_posts,instagram_content_publish,business_management");
+      authorize.searchParams.set("scope", "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management");
       return Response.redirect(authorize.toString(), 302);
     }
     if (path === "/oauth/meta/callback") return handleOAuthCallback(request, env);
@@ -110,7 +110,7 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
     authorize.searchParams.set("code_challenge", challenge);
     authorize.searchParams.set("code_challenge_method", "S256");
     authorize.searchParams.set("response_type", "code");
-    authorize.searchParams.set("scope", "pages_show_list,pages_manage_posts,instagram_content_publish,business_management");
+    authorize.searchParams.set("scope", "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management");
     return json({ authorize_url: authorize.toString() });
   }
   return json({ error: "unknown endpoint" }, 404);

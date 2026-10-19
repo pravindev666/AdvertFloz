@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python control plane
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Lint
+        run: python -m ruff check advertfloz tests scripts
+      - name: Tests (unit, integration, contract, security, e2e)
+        run: python -m pytest -q
+      - name: Migrations
+        run: python scripts/migrate.py
+      - name: Doctor (offline; expects WARNING without secrets)
+        run: python scripts/doctor.py || true
+      - name: Zero-cost gate (must not be treated as GO without a real account)
+        run: python scripts/cost_gate.py || true
+
+  worker:
+    name: Cloudflare Worker remote plane
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: worker/package.json
+      - name: Install
+        run: npm install
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Tests
+        run: npx vitest run
+      # Deployment is a deliberate, separate manual gate — never automatic here.
+      # - name: Deploy (manual gate)
+      #   run: npx wrangler deploy
+      #   env:
+      #     CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

@@ -1,0 +1,21 @@
+[project]
+name = "advertfloz"
+version = "1.7.0"
+description = "AdvertFloz v1.7 — single-operator campaign control plane and publisher"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["worker", ".venv", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# UP042: `class X(str, Enum)` is intentional — JSON/log friendly and stable across 3.11+.
+# UP036: the Python-version diagnostic is a runtime check, not dead code.
+ignore = ["E501", "UP042", "UP036"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

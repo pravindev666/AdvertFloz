@@ -1,0 +1,21 @@
+# AdvertFloz v1.7 branded theme. Semantic tokens mirror ui/theme/tokens.py.
+[theme]
+base = "light"
+primaryColor = "#4F46E5"
+backgroundColor = "#F6F8FC"
+secondaryBackgroundColor = "#EEF2F7"
+textColor = "#162033"
+font = "sans serif"
+
+[server]
+headless = true
+# Local personal mode: bind to loopback only. Hosted deployments must enable auth (fail-closed).
+address = "127.0.0.1"
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = false

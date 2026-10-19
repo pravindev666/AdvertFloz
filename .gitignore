@@ -1,0 +1,40 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Local data / state
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+backups/
+logs/
+
+# Uploaded / generated content
+*.zip
+!tests/fixtures/*.zip
+imports/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Node / Worker
+node_modules/
+worker/dist/
+worker/.wrangler/
+worker/wrangler.toml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+__MACOSX/

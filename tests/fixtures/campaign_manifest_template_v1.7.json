@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.7",
+  "campaign_id": "replace-with-stable-campaign-id",
+  "product_name": "REVIEW_REQUIRED",
+  "campaign_tag": "sample_2027",
+  "start_date": "2027-01-01",
+  "end_date": "2027-01-02",
+  "timezone_default": "Asia/Kolkata",
+  "planned_days": 2,
+  "platforms": [
+    "facebook",
+    "instagram"
+  ],
+  "post_count": 2,
+  "expected_post_ids": [
+    "P001",
+    "P002"
+  ],
+  "image_naming_pattern": "{image_id}.jpg",
+  "campaign_plan_file": "campaign_plan.csv",
+  "image_prompts_file": "image_prompts.csv",
+  "creative_library_file": "365_day_prompt_library.md",
+  "outcomes_workbook_file": "365_outcomes_driven_campaigns.md",
+  "enabled_default": false,
+  "batch_ranges": [
+    "001_030",
+    "031_060",
+    "061_090",
+    "091_120",
+    "121_150",
+    "151_180",
+    "181_210",
+    "211_240",
+    "241_270",
+    "271_300",
+    "301_330",
+    "331_360",
+    "361_365"
+  ],
+  "validation_status": "review_required",
+  "note": "Illustrative template only. Update counts/date range for the actual plan."
+}

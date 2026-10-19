@@ -1,0 +1,34 @@
+# AdvertFloz remote plane — Cloudflare Worker configuration template.
+# Copy to wrangler.toml and fill in identifiers. Never commit real secrets.
+#
+# Secrets are set with:  wrangler secret put META_APP_SECRET
+#                        wrangler secret put TOKEN_ENCRYPTION_KEY
+#                        wrangler secret put WORKER_SERVICE_KEY
+#                        wrangler secret put TELEGRAM_BOT_TOKEN
+
+name = "advertfloz-worker"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# Bounded scheduling. A Cron tick processes a small number of jobs and never sleeps.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "advertfloz"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Private media storage. Requires the zero-cost gate to pass (R2 payment prerequisite).
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "advertfloz-media"
+
+[vars]
+META_GRAPH_VERSION = "v21.0"
+META_APP_ID = "REPLACE_WITH_APP_ID"
+META_OAUTH_REDIRECT_URI = "https://REPLACE_WITH_WORKER_DOMAIN/oauth/meta/callback"
+CONTROL_PLANE_URL = "http://localhost:8501"
+# R2_PUBLIC_BASE_URL only when using a signed-URL origin; the object stays private.
+R2_SIGNED_URL_TTL_SECONDS = "900"

@@ -51,3 +51,21 @@ def test_navigation_registers_all_pages():
     assert "Overview" in NAV_PAGES
     assert {"Marketing Prompt Builder", "Campaign Import", "Calendar", "Settings & Recovery"} <= set(NAV_PAGES)
     assert len(NAV_PAGES) == 13
+
+
+def test_campaign_import_page_navigation():
+    path = ROOT / "advertfloz" / "ui" / "pages" / "campaign_import.py"
+    app = AppTest.from_file(str(path), default_timeout=30)
+    app.run()
+    assert not app.exception
+
+    app.session_state["pending_step"] = "2 · Assets"
+    app.run()
+    assert not app.exception
+    assert app.session_state["import_step_radio"] == "2 · Assets"
+
+    app.session_state["pending_step"] = "4 · Validate"
+    app.run()
+    assert not app.exception
+    assert app.session_state["import_step_radio"] == "4 · Validate"
+

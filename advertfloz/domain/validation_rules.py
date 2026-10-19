@@ -49,7 +49,7 @@ PLATFORM_VALUES = {"facebook", "instagram", "facebook;instagram"}
 DISCLOSURE_VALUES = {d.value for d in DisclosureStatus}
 
 POST_ID_RE = re.compile(r"P(\d{3})")
-IMAGE_FILENAME_RE = re.compile(r"[1-9]\d{0,2}\.jpg")
+IMAGE_FILENAME_RE = re.compile(r"[1-9]\d{0,2}\.jpe?g")
 ZIP_NAME_RE = re.compile(r"advertfloz_images_(\d{3})_(\d{3})\.zip")
 
 MAX_INSTAGRAM_CAPTION = 2200

@@ -87,10 +87,18 @@ def inspect_zip(path: str | Path, *, max_image_bytes: int, max_expanded_bytes: i
             posix = PurePosixPath(name)
 
             if info.is_dir():
-                inspection.issues.append(_issue("zip", name, "zip.dir", "Directories are not allowed; ZIP must be flat"))
+                # Silently skip directories (common when users zip a folder)
                 continue
-            if "\\" in name or posix.is_absolute() or ".." in posix.parts or len(posix.parts) != 1:
-                inspection.issues.append(_issue("zip", name, "zip.traversal", "Unsafe or non-flat path (traversal/symlink)"))
+            if "\\" in name or posix.is_absolute() or ".." in posix.parts:
+                inspection.issues.append(_issue("zip", name, "zip.traversal", "Unsafe path (traversal/symlink)"))
+                continue
+            # Tolerate one level of nesting: strip the leading directory
+            # e.g. "advertfloz_images_NNN_NNN.zip/1.jpeg" → "1.jpeg"
+            if len(posix.parts) == 2:
+                name = posix.parts[-1]
+                posix = PurePosixPath(name)
+            elif len(posix.parts) > 2:
+                inspection.issues.append(_issue("zip", name, "zip.traversal", "Too many nested directories; one level max"))
                 continue
             mode = (info.external_attr >> 16) & 0xF000
             if mode == 0xA000:
@@ -102,11 +110,13 @@ def inspect_zip(path: str | Path, *, max_image_bytes: int, max_expanded_bytes: i
             if not IMAGE_FILENAME_RE.fullmatch(name):
                 inspection.issues.append(
                     _issue("zip", name, "zip.filename",
-                           "Expected a flat numeric root JPEG such as 42.jpg (no leading zeros, no folder)")
+                           "Expected a numeric JPEG such as 42.jpg or 42.jpeg (no leading zeros)")
                 )
                 continue
 
-            image_id = int(name[:-4])
+            # Normalize extension: .jpeg → strip 5 chars, .jpg → strip 4 chars
+            stem = posix.stem
+            image_id = int(stem)
             inspection.expanded_bytes += info.file_size
             if info.file_size > max_image_bytes:
                 inspection.issues.append(_issue(name, name, "zip.image_size", "Asset exceeds the configured image byte limit"))
@@ -128,8 +138,25 @@ def inspect_zip(path: str | Path, *, max_image_bytes: int, max_expanded_bytes: i
                 continue
 
             if not data.startswith(JPEG_MAGIC):
-                inspection.issues.append(_issue(name, name, "image.not_jpeg", "Filename says JPG but bytes are not JPEG"))
-                continue
+                # Auto-convert PNG→JPEG when Pillow is available
+                if _PIL_AVAILABLE and data.startswith(b"\x89PNG"):
+                    try:
+                        img = Image.open(io.BytesIO(data))
+                        if img.mode in ("RGBA", "P", "LA"):
+                            img = img.convert("RGB")
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=92, optimize=True)
+                        data = buf.getvalue()
+                        inspection.issues.append(
+                            _issue(name, name, "image.png_converted",
+                                   "PNG auto-converted to JPEG for import", severity=Severity.WARNING)
+                        )
+                    except Exception:
+                        inspection.issues.append(_issue(name, name, "image.not_jpeg", "PNG could not be converted to JPEG"))
+                        continue
+                else:
+                    inspection.issues.append(_issue(name, name, "image.not_jpeg", "Filename says JPG but bytes are not JPEG"))
+                    continue
             width, height, decoded = _decode_dimensions(data)
             if _PIL_AVAILABLE and not decoded:
                 inspection.issues.append(_issue(name, name, "image.undecodable", "JPEG failed to decode"))

@@ -107,7 +107,11 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
 
 export async function createOAuthState(env: Env, provider: string): Promise<{ state: string; verifier: string }> {
   const state = crypto.randomUUID().replace(/-/g, "");
-  const verifier = crypto.randomUUID().replace(/-/g, "");
+  // Meta requires code_verifier to be 43-128 characters of [A-Za-z0-9-._~].
+  // Generate 48 random bytes → 64 base64url characters.
+  const buf = new Uint8Array(48);
+  crypto.getRandomValues(buf);
+  const verifier = btoa(String.fromCharCode(...buf)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   const now = new Date();
   const expires = new Date(now.getTime() + 600_000);
   await env.DB.prepare(

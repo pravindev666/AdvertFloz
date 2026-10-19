@@ -25,6 +25,21 @@ export default {
     const path = url.pathname;
 
     if (path === "/health") return json({ status: "ok", service: "advertfloz-worker" });
+    if (path === "/oauth/meta/start") {
+      const provider = url.searchParams.get("provider") ?? "facebook";
+      const { createOAuthState } = await import("./auth/oauth_callback");
+      const { state, verifier } = await createOAuthState(env, provider);
+      const challenge = await sha256Url(verifier);
+      const authorize = new URL(`https://www.facebook.com/${env.META_GRAPH_VERSION}/dialog/oauth`);
+      authorize.searchParams.set("client_id", env.META_APP_ID);
+      authorize.searchParams.set("redirect_uri", env.META_OAUTH_REDIRECT_URI);
+      authorize.searchParams.set("state", state);
+      authorize.searchParams.set("code_challenge", challenge);
+      authorize.searchParams.set("code_challenge_method", "S256");
+      authorize.searchParams.set("response_type", "code");
+      authorize.searchParams.set("scope", "pages_show_list,pages_manage_posts,instagram_content_publish,business_management");
+      return Response.redirect(authorize.toString(), 302);
+    }
     if (path === "/oauth/meta/callback") return handleOAuthCallback(request, env);
     if (path.startsWith("/media/")) {
       const key = decodeURIComponent(path.slice("/media/".length));

@@ -9,6 +9,14 @@ for laptop-off operation.
 **Streamlit is the control plane, never the scheduler of record.** Local scheduling is a
 separate bounded process; remote scheduling is the Worker.
 
+## 📖 Setup & Deployment Guides
+
+* [Meta (Facebook & Instagram) Integration Guide](META_INTEGRATION_AND_SETUP_GUIDE.md) — Step-by-step Meta Developer Business App setup and OAuth connection.
+* [Deploy to Streamlit Cloud & Cloudflare Guide](DEPLOY_STREAMLIT_AND_CLOUDFLARE_GUIDE.md) — 24/7 autonomous deployment using Streamlit Cloud, Cloudflare D1, R2, and Worker.
+* [Troubleshooting & Issues Resolved Guide](TROUBLESHOOTING_AND_ISSUES_RESOLVED.md) — Comprehensive technical reference of all issues faced, root causes, and fixes.
+* [Quick Start ELI5 Guide](START_HERE_ELI5_GUIDE.md) — Plain English beginner walkthrough for campaigns, prompts, and local keys.
+
+
 ## What this repository contains
 
 ```

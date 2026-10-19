@@ -20,6 +20,9 @@ def start_oauth(repo: Repository, settings: Settings, platform: Platform) -> tup
     """Return (authorize_url, message). Requires the Meta app to be configured."""
     if not settings.meta_app_configured:
         return None, "Meta Developer App is not configured (META_APP_ID + META_APP_SECRET). Configure it in deployment secrets."
+    if settings.worker_configured and "workers.dev" in settings.meta_oauth_redirect_uri:
+        url = f"{settings.worker_base_url.rstrip('/')}/oauth/meta/start?provider={platform.value}"
+        return url, "Redirecting to Meta's official authorization page via Cloudflare Worker."
     code_verifier, challenge = oauth.pkce_pair()
     state = oauth.new_state()
     repo.save_oauth_state(state, platform, code_verifier)

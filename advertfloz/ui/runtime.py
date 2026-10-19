@@ -13,9 +13,11 @@ def _repo_for(path: str) -> Repository:
 
 
 def get_settings() -> Settings:
-    if "settings" not in st.session_state:
-        st.session_state["settings"] = load_settings()
-    return st.session_state["settings"]
+    settings = st.session_state.get("settings")
+    if not isinstance(settings, Settings) or not hasattr(settings, "admin_password_configured"):
+        settings = load_settings()
+        st.session_state["settings"] = settings
+    return settings
 
 
 def get_repo() -> Repository:
@@ -39,15 +41,15 @@ import hmac
 def hosted_auth_ok() -> bool:
     """Fail closed: a hosted control plane without auth is unusable."""
     settings = get_settings()
-    if not settings.hosted:
+    if not getattr(settings, "hosted", False):
         return True
-    if not settings.hosted_auth_ready():
+    if not hasattr(settings, "hosted_auth_ready") or not settings.hosted_auth_ready():
         return False
     # Check Cloudflare Access Zero Trust header if present
     try:
         headers = getattr(st.context, "headers", {})
         cf_email = (headers.get("cf-access-authenticated-user-email") or headers.get("Cf-Access-Authenticated-User-Email") or "").lower().strip()
-        if cf_email and settings.operator_allowlist:
+        if cf_email and getattr(settings, "operator_allowlist", ()):
             if cf_email in {a.lower() for a in settings.operator_allowlist}:
                 st.session_state["afz_user_email"] = cf_email
                 st.session_state["afz_authenticated"] = True
@@ -59,7 +61,7 @@ def hosted_auth_ok() -> bool:
     if not claims:
         return False
     email = (claims.get("email") or claims.get("preferred_username") or "").lower()
-    return email in {a.lower() for a in settings.operator_allowlist}
+    return email in {a.lower() for a in getattr(settings, "operator_allowlist", ())}
 
 
 def enforce_hosted_gate() -> bool:
@@ -67,7 +69,7 @@ def enforce_hosted_gate() -> bool:
     settings = get_settings()
 
     # 1. Master Password Gate (works locally or in hosted mode)
-    if settings.admin_password_configured:
+    if getattr(settings, "admin_password_configured", False):
         if st.session_state.get("afz_authenticated", False):
             return True
 

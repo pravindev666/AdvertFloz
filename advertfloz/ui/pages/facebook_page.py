@@ -93,7 +93,7 @@ def render() -> None:
             st.success(message)
             st.rerun()
     else:
-        oauth_start_url = f"{settings.worker_base_url.rstrip('/')}/auth/meta/start"
+        oauth_start_url = f"{settings.worker_base_url.rstrip('/')}/oauth/meta/start"
         btn_label = "Reconnect Facebook" if (conn and conn.page_name) else "Connect Facebook"
         col1.link_button(btn_label, oauth_start_url)
 

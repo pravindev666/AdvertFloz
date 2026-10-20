@@ -25,7 +25,7 @@ export default {
     const path = url.pathname;
 
     if (path === "/health") return json({ status: "ok", service: "advertfloz-worker" });
-    if (path === "/oauth/meta/start") {
+    if (path === "/oauth/meta/start" || path === "/auth/meta/start") {
       const provider = url.searchParams.get("provider") ?? "facebook";
       const { createOAuthState } = await import("./auth/oauth_callback");
       const { state, verifier } = await createOAuthState(env, provider);

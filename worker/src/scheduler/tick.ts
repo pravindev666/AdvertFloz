@@ -75,6 +75,9 @@ export async function claimJobs(env: Env, options: TickOptions): Promise<JobRow[
         AND due_at_utc != '' AND due_at_utc <= ?
         AND (next_retry_at = '' OR next_retry_at <= ?)
         AND (lease_expires_at = '' OR lease_expires_at <= ?)
+        AND platform NOT IN (
+          SELECT REPLACE(key, 'pause_', '') FROM runtime_flags WHERE value = '1' AND key LIKE 'pause_%'
+        )
       ORDER BY due_at_utc LIMIT ?`,
   )
     .bind(...CLAIMABLE, iso(options.now), iso(options.now), iso(options.now), options.limit)

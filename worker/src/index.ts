@@ -86,7 +86,10 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   }
   if (path === "/api/scheduler/tick" && request.method === "POST") {
     try {
-      const result = await runTick(env, { limit: 5, leaseSeconds: 300, now: new Date(), owner: "manual" });
+      let body: any = {};
+      try { body = await request.json(); } catch {}
+      const limit = Number(body.limit) || 25;
+      const result = await runTick(env, { limit, leaseSeconds: 300, now: new Date(), owner: "manual" });
       return json({ ok: true, result });
     } catch (err: any) {
       return json({ error: String(err?.message || err) }, 500);

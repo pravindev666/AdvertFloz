@@ -359,7 +359,11 @@ def force_publish_all_today(
     # 2. Upload images to R2, activate jobs, and sync schedule to Cloudflare D1
     activate_and_push_campaign(repo, settings, campaign_id, revision_id)
 
-    # 3. Trigger worker tick(s) to publish all
+    # 3. Ensure dispatcher is active and not paused
+    call_worker(settings, "/api/control/resume?target=all", method="POST")
+    call_worker(settings, "/api/control/resume?target=facebook", method="POST")
+
+    # 4. Trigger worker tick(s) to publish all
     total_published = 0
     total_claimed = 0
     for _ in range(6):

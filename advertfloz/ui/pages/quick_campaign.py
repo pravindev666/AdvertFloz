@@ -234,6 +234,12 @@ def render() -> None:
                         st.session_state["qc_assembled_res"] = res
                         # Auto-commit so posts are never lost
                         if not st.session_state.get("qc_committed") or len(db_posts) == 0:
+                            # Restrict platforms to only what the user selected in Step 1
+                            sel_set = set(st.session_state.get("qc_platforms", ["facebook"]))
+                            for p in res.posts:
+                                if hasattr(p, "platforms") and p.platforms:
+                                    filtered = {pl for pl in p.platforms if (getattr(pl, "value", str(pl)).lower() in sel_set)}
+                                    p.platforms = filtered if filtered else p.platforms
                             commit_import(repo, res, campaign_name=active_id)
                             st.session_state["qc_committed"] = True
                             db_posts = repo.list_posts(active_id, 1)

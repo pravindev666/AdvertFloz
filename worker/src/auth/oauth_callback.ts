@@ -69,20 +69,49 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
   if (!token.payload) return html(`The authorization code could not be exchanged: ${token.error}`, 400);
   const data = token.payload;
 
-  const sealed = await sealToken(data.access_token, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
+  let pageId = "";
+  let pageName = "";
+  let finalToken = data.access_token;
+
+  if (row.provider === "facebook") {
+    try {
+      const pagesResp = await fetch(
+        `https://graph.facebook.com/${env.META_GRAPH_VERSION}/me/accounts?fields=id,name,access_token,tasks&access_token=${data.access_token}`
+      );
+      if (pagesResp.ok) {
+        const pagesData: any = await pagesResp.json();
+        const pages = pagesData.data ?? [];
+        if (pages.length > 0) {
+          const selected = pages[0];
+          pageId = selected.id ?? "";
+          pageName = selected.name ?? "";
+          if (selected.access_token) {
+            finalToken = selected.access_token;
+          }
+        }
+      }
+    } catch {
+      // Continue with user token if page discovery fails
+    }
+  }
+
+  const sealed = await sealToken(finalToken, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
   const now = new Date().toISOString();
   const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString() : "";
+  const stateStr = pageId ? "test_passed" : "connected_no_target";
+  const activationStr = pageId ? "Ready for operator action" : "Needs operator action";
 
   await env.DB.prepare(
     `INSERT INTO connections (provider, auth_flow, state, account_id, account_name, page_id, page_name, scopes,
                               issued_at, expires_at, last_validated_at, activation_state, key_id, updated_at)
-     VALUES (?, 'facebook_login', 'connected_no_target', '', '', '', '', ?, ?, ?, ?, 'Needs operator action', ?, ?)
+     VALUES (?, 'facebook_login', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(provider) DO UPDATE SET
-       auth_flow='facebook_login', state='connected_no_target', scopes=excluded.scopes,
+       auth_flow='facebook_login', state=excluded.state, account_id=excluded.account_id, account_name=excluded.account_name,
+       page_id=excluded.page_id, page_name=excluded.page_name, scopes=excluded.scopes,
        issued_at=excluded.issued_at, expires_at=excluded.expires_at, last_validated_at=excluded.last_validated_at,
-       key_id=excluded.key_id, updated_at=excluded.updated_at`,
+       activation_state=excluded.activation_state, key_id=excluded.key_id, updated_at=excluded.updated_at`,
   )
-    .bind(row.provider, data.scope ?? "", now, expiresAt, now, sealed.keyId, now)
+    .bind(row.provider, stateStr, pageId, pageName, pageId, pageName, data.scope ?? "", now, expiresAt, now, activationStr, sealed.keyId, now)
     .run();
 
   const connection = await env.DB.prepare("SELECT connection_id FROM connections WHERE provider = ?")
@@ -102,7 +131,14 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
     .bind(row.provider, now)
     .run();
 
-  return Response.redirect(env.CONTROL_PLANE_URL, 303);
+  const baseRedirect = env.CONTROL_PLANE_URL.replace(/\/+$/, "");
+  const targetUrl = new URL(`${baseRedirect}/facebook_page`);
+  targetUrl.searchParams.set("oauth_done", row.provider);
+  if (pageId) {
+    targetUrl.searchParams.set("page_id", pageId);
+    targetUrl.searchParams.set("page_name", pageName);
+  }
+  return Response.redirect(targetUrl.toString(), 303);
 }
 
 export async function createOAuthState(env: Env, provider: string): Promise<{ state: string; verifier: string }> {

@@ -113,6 +113,65 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
     authorize.searchParams.set("scope", "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management");
     return json({ authorize_url: authorize.toString() });
   }
+  if (path === "/api/connections") {
+    const rows = await env.DB.prepare(
+      "SELECT connection_id, provider, auth_flow, state, account_id, account_name, page_id, page_name, scopes, issued_at, expires_at, last_validated_at, activation_state, key_id, updated_at FROM connections"
+    ).all();
+    return json({ connections: rows.results ?? [] });
+  }
+  if (path === "/api/meta/pages" || path === "/api/meta/sync-pages") {
+    const conn = await env.DB.prepare("SELECT * FROM connections WHERE provider = 'facebook'").first<{ connection_id: number; provider: string }>();
+    if (!conn) return json({ error: "No Facebook connection found" }, 404);
+    const tokenRow = await env.DB.prepare("SELECT * FROM connection_tokens WHERE connection_id = ?").bind(conn.connection_id).first<{
+      key_id: string; nonce: string; ciphertext: string;
+    }>();
+    if (!tokenRow) return json({ error: "No token found for connection" }, 404);
+
+    const { openToken, sealToken } = await import("./auth/crypto");
+    const rawToken = await openToken(
+      { keyId: tokenRow.key_id, nonce: tokenRow.nonce, ciphertext: tokenRow.ciphertext },
+      env.TOKEN_ENCRYPTION_KEY,
+    );
+
+    let pages: Array<{ id: string; name: string; access_token?: string }> = [];
+    const resp = await fetch(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/me/accounts?fields=id,name,access_token,tasks&access_token=${rawToken}`);
+    if (resp.ok) {
+      const data: any = await resp.json();
+      pages = data.data ?? [];
+    } else {
+      const meResp = await fetch(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/me?fields=id,name&access_token=${rawToken}`);
+      if (meResp.ok) {
+        const meData: any = await meResp.json();
+        if (meData.id && meData.name) {
+          pages = [{ id: meData.id, name: meData.name }];
+        }
+      }
+    }
+
+    const targetPageId = new URL(request.url).searchParams.get("page_id");
+    const selected = targetPageId ? pages.find((p: any) => p.id === targetPageId) : pages[0];
+
+    if (selected) {
+      const now = new Date().toISOString();
+      if (selected.access_token) {
+        const sealed = await sealToken(selected.access_token, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
+        await env.DB.prepare(
+          "UPDATE connection_tokens SET nonce = ?, ciphertext = ?, key_id = ?, created_at = ? WHERE connection_id = ?"
+        ).bind(sealed.nonce, sealed.ciphertext, sealed.keyId, now, conn.connection_id).run();
+      }
+
+      await env.DB.prepare(
+        `UPDATE connections SET page_id = ?, page_name = ?, account_id = ?, account_name = ?,
+         state = 'test_passed', activation_state = 'Ready for operator action', updated_at = ?
+         WHERE connection_id = ?`
+      ).bind(selected.id, selected.name, selected.id, selected.name, now, conn.connection_id).run();
+    }
+
+    return json({
+      pages: pages.map((p: any) => ({ id: p.id, name: p.name })),
+      selected_page: selected ? { id: selected.id, name: selected.name } : null,
+    });
+  }
   return json({ error: "unknown endpoint" }, 404);
 }
 

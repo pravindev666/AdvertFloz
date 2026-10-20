@@ -48,9 +48,17 @@ def _sidebar_frame() -> None:
         st.divider()
         fb = repo.get_connection(Platform.FACEBOOK)
         ig = repo.get_connection(Platform.INSTAGRAM)
+        if (fb is None or ig is None) and settings.mode == "remote" and settings.worker_configured:
+            from ..infrastructure.worker_client import sync_remote_connections
+            sync_remote_connections(repo, settings)
+            fb = repo.get_connection(Platform.FACEBOOK)
+            ig = repo.get_connection(Platform.INSTAGRAM)
+
         st.caption("Connections")
-        st.caption(f"Facebook: {fb.state.value if fb else 'not connected'}")
-        st.caption(f"Instagram: {ig.state.value if ig else 'not connected'}")
+        fb_desc = f"{fb.state.value} ({fb.page_name})" if (fb and fb.page_name) else (fb.state.value if fb else "not connected")
+        ig_desc = f"{ig.state.value} ({ig.account_name})" if (ig and ig.account_name) else (ig.state.value if ig else "not connected")
+        st.caption(f"Facebook: {fb_desc}")
+        st.caption(f"Instagram: {ig_desc}")
 
         st.divider()
         if st.session_state.get("afz_authenticated"):

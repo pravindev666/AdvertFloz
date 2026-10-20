@@ -5,6 +5,7 @@ import streamlit as st
 
 from advertfloz.domain.enums import JobStatus, Platform
 from advertfloz.infrastructure.security.crypto import TokenCipher
+from advertfloz.infrastructure.worker_client import sync_meta_pages, sync_remote_connections
 from advertfloz.ui.components.status import chip
 from advertfloz.ui.pages import _oauth
 from advertfloz.ui.runtime import get_repo, get_settings
@@ -19,7 +20,24 @@ def render() -> None:
     settings = get_settings()
     repo = get_repo()
     platform = Platform.FACEBOOK
+
+    # Handle return from OAuth callback or auto-sync in remote mode
+    if settings.mode == "remote" and settings.worker_configured:
+        if st.query_params.get("oauth_done") == "facebook":
+            sync_remote_connections(repo, settings)
+            st.query_params.clear()
+            st.toast("Facebook connected successfully!", icon="✅")
+        conn_check = repo.get_connection(platform)
+        if conn_check is None:
+            sync_remote_connections(repo, settings)
+        elif not conn_check.page_name:
+            sync_meta_pages(repo, settings)
+
     st.markdown('<div class="afz-page-title">Facebook Page</div>', unsafe_allow_html=True)
+
+    conn = repo.get_connection(platform)
+    if conn and conn.page_name:
+        st.success(f"Connected Facebook Page: **{conn.page_name}** (Page ID: `{conn.page_id}`)")
 
     for line in _oauth.status_lines(repo, platform):
         st.write(line)
@@ -33,7 +51,7 @@ def render() -> None:
     st.markdown('<div class="afz-section-title">Connect</div>', unsafe_allow_html=True)
     st.caption("You will sign in on Meta's official page. AdvertFloz never asks for your Facebook password.")
 
-    col = st.columns(3)
+    col = st.columns(4)
     if settings.mode == "demo":
         if col[0].button("Connect Facebook (demo)"):
             message = _oauth.demo_connect(repo, settings, platform, _cipher(settings))
@@ -47,6 +65,17 @@ def render() -> None:
                 st.info(message)
             else:
                 st.error(message)
+
+        if col[1].button("Sync / Fetch Page", help="Fetch your Facebook Pages (like Musicflo) from Meta via Worker"):
+            with st.spinner("Fetching Facebook Pages..."):
+                res = sync_meta_pages(repo, settings)
+                if res and res.get("selected_page"):
+                    st.success(f"Found and linked Facebook Page: **{res['selected_page']['name']}**")
+                else:
+                    sync_remote_connections(repo, settings)
+                    st.info("Synchronized connection state.")
+            st.rerun()
+
         if st.session_state.get("fb_authorize_url"):
             st.link_button("Open Meta authorization", st.session_state["fb_authorize_url"])
 

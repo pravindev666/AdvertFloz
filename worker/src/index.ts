@@ -96,6 +96,26 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
     const rows = await env.DB.prepare("SELECT * FROM platform_jobs ORDER BY due_at_utc LIMIT 500").all();
     return json({ jobs: rows.results ?? [] });
   }
+  if (path === "/api/jobs/force-due" && request.method === "POST") {
+    try {
+      let body: any = {};
+      try { body = await request.json(); } catch {}
+      const campId = body.campaign_id;
+      const now = new Date().toISOString();
+      if (campId) {
+        await env.DB.prepare(
+          "UPDATE platform_jobs SET status = 'QUEUED', due_at_utc = ?, next_retry_at = '', lease_owner = '', lease_expires_at = '' WHERE campaign_id = ? AND status != 'PUBLISHED'"
+        ).bind(now, campId).run();
+      } else {
+        await env.DB.prepare(
+          "UPDATE platform_jobs SET status = 'QUEUED', due_at_utc = ?, next_retry_at = '', lease_owner = '', lease_expires_at = '' WHERE status != 'PUBLISHED'"
+        ).bind(now).run();
+      }
+      return json({ ok: true });
+    } catch (err: any) {
+      return json({ error: String(err?.message || err) }, 500);
+    }
+  }
   if (path === "/api/cost-gate") {
     return json({
       allowed: true,

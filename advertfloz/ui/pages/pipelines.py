@@ -13,6 +13,7 @@ from advertfloz.infrastructure.worker_client import (
     call_worker,
     delete_worker_campaign,
     fetch_worker_jobs,
+    force_publish_entire_pipeline,
     trigger_worker_tick,
 )
 from advertfloz.ui.components.status import chip
@@ -123,10 +124,17 @@ def render() -> None:
 
     # Operational Controls
     st.markdown("### ⚡ Operational Controls")
-    ctl1, ctl2, ctl3 = st.columns(3)
+    ctl0, ctl1, ctl2, ctl3 = st.columns([1.6, 1.2, 1.2, 1.2])
+
+    with ctl0:
+        if st.button("🚀 Publish Entire Pipeline Now", type="primary", use_container_width=True, help="Force all remaining posts in this campaign to publish immediately"):
+            with st.spinner("Dispatching and publishing all remaining posts right now…"):
+                res = force_publish_entire_pipeline(repo, settings, active_id)
+            st.success(f"Dispatched! Published: {res.get('published', 0)}")
+            st.rerun()
 
     with ctl1:
-        if st.button("⚡ Publish Due Posts Now", type="primary", use_container_width=True, help="Trigger immediate delivery for any posts whose schedule has arrived"):
+        if st.button("⚡ Dispatch Due Tick", use_container_width=True, help="Trigger immediate delivery for any posts whose schedule has arrived"):
             with st.spinner("Dispatching worker tick…"):
                 trigger_worker_tick(settings)
                 fetch_worker_jobs(repo, settings)
@@ -135,7 +143,7 @@ def render() -> None:
 
     with ctl2:
         can_retry = failed > 0
-        if st.button("🔁 Safe Retry Failed Posts", disabled=not can_retry, use_container_width=True, help="Re-queue failed posts safely with incremented attempt counter"):
+        if st.button("🔁 Retry Failed", disabled=not can_retry, use_container_width=True, help="Re-queue failed posts safely"):
             with st.spinner("Re-queueing failed posts…"):
                 retry_count = 0
                 for j in jobs:

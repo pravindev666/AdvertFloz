@@ -10,7 +10,7 @@ import type { Env } from "../env";
 import * as meta from "../meta/publish";
 import { openToken } from "../auth/crypto";
 
-export const CLAIMABLE = ["QUEUED", "PROCESSING_MEDIA"];
+export const CLAIMABLE = ["QUEUED", "PROCESSING_MEDIA", "CLAIMED"];
 export const BASE_BACKOFF_SECONDS = 60;
 export const MAX_BACKOFF_SECONDS = 3600;
 export const IG_STAGE_DELAY_SECONDS = 30;

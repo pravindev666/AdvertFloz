@@ -385,6 +385,46 @@ def force_publish_all_today(
     return {"published": total_published, "claimed": total_claimed}
 
 
+def force_publish_entire_pipeline(
+    repo: Repository,
+    settings: Settings,
+    campaign_id: str,
+) -> dict[str, Any]:
+    """Force all pending jobs in a campaign to due now in D1, then tick worker until all are published."""
+    from datetime import datetime, timezone
+    import json
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    # 1. Reset remote D1 jobs
+    call_worker(settings, "/api/jobs/force-due", method="POST", body=json.dumps({"campaign_id": campaign_id}))
+    # 2. Reset local SQLite jobs
+    try:
+        repo.conn.execute(
+            "UPDATE platform_jobs SET status = 'QUEUED', due_at_utc = ? WHERE campaign_id = ? AND status != 'PUBLISHED'",
+            (now_iso, campaign_id),
+        )
+        repo.conn.commit()
+    except Exception:
+        pass
+    # 3. Ensure dispatcher is not paused
+    call_worker(settings, "/api/control/resume?target=all", method="POST")
+    # 4. Loop worker ticks until all are published (up to 10 ticks)
+    total_pub = 0
+    for _ in range(10):
+        tick_res = trigger_worker_tick(settings)
+        if tick_res and tick_res.get("ok"):
+            r = tick_res.get("result", {})
+            pub = r.get("published", 0)
+            total_pub += pub
+            if pub == 0 and r.get("claimed", 0) == 0:
+                break
+        else:
+            break
+    # 5. Fetch updated statuses from worker D1
+    fetch_worker_jobs(repo, settings)
+    return {"published": total_pub}
+
+
 def delete_worker_campaign(settings: Settings, campaign_id: str) -> bool:
     """Delete a campaign and its jobs/posts from Cloudflare D1."""
     if not settings.worker_configured:

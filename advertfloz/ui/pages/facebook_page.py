@@ -39,6 +39,33 @@ def render() -> None:
     if conn and conn.page_name:
         st.success(f"Connected Facebook Page: **{conn.page_name}** (Page ID: `{conn.page_id}`)")
 
+    # Page selector for multiple pages
+    available_pages = st.session_state.get("available_fb_pages", [])
+    if not available_pages and conn and conn.page_id:
+        available_pages = [{"id": conn.page_id, "name": conn.page_name or conn.page_id}]
+
+    if available_pages and len(available_pages) > 1:
+        st.markdown('<div class="afz-section-title">Target Facebook Page</div>', unsafe_allow_html=True)
+        current_page_idx = 0
+        for idx, p in enumerate(available_pages):
+            if conn and p["id"] == conn.page_id:
+                current_page_idx = idx
+                break
+
+        selected_page = st.selectbox(
+            "Select which Facebook Page AdvertFloz schedules to:",
+            options=available_pages,
+            index=current_page_idx,
+            format_func=lambda p: f"{p.get('name', 'Page')} (ID: {p.get('id')})",
+            key="fb_target_page_selector",
+        )
+        if selected_page and conn and selected_page["id"] != conn.page_id:
+            if st.button(f"Switch Target Page to {selected_page.get('name')}", type="primary"):
+                with st.spinner(f"Setting target page to {selected_page.get('name')}..."):
+                    sync_meta_pages(repo, settings, page_id=selected_page["id"])
+                    st.success(f"Switched target page to **{selected_page.get('name')}**!")
+                    st.rerun()
+
     for line in _oauth.status_lines(repo, platform):
         st.write(line)
 
@@ -48,17 +75,17 @@ def render() -> None:
     c2.metric("Published", sum(1 for j in jobs if j.status is JobStatus.PUBLISHED))
     c3.metric("Failed", sum(1 for j in jobs if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}))
 
-    st.markdown('<div class="afz-section-title">Connect</div>', unsafe_allow_html=True)
+    st.markdown('<div class="afz-section-title">Connect & Manage</div>', unsafe_allow_html=True)
     st.caption("You will sign in on Meta's official page. AdvertFloz never asks for your Facebook password.")
 
-    col = st.columns(4)
+    col1, col2, col3, col4 = st.columns(4)
     if settings.mode == "demo":
-        if col[0].button("Connect Facebook (demo)"):
+        if col1.button("Connect Facebook (demo)"):
             message = _oauth.demo_connect(repo, settings, platform, _cipher(settings))
             st.success(message)
             st.rerun()
     else:
-        if col[0].button("Connect Facebook"):
+        if col1.button("Connect Facebook"):
             url, message = _oauth.start_oauth(repo, settings, platform)
             if url:
                 st.session_state["fb_authorize_url"] = url
@@ -66,9 +93,11 @@ def render() -> None:
             else:
                 st.error(message)
 
-        if col[1].button("Sync / Fetch Page", help="Fetch your Facebook Pages (like Musicflo) from Meta via Worker"):
+        if col2.button("Sync / Fetch Pages", help="Fetch your Facebook Pages (like MusikFlo) from Meta via Worker"):
             with st.spinner("Fetching Facebook Pages..."):
                 res = sync_meta_pages(repo, settings)
+                if res and res.get("pages"):
+                    st.session_state["available_fb_pages"] = res["pages"]
                 if res and res.get("selected_page"):
                     st.success(f"Found and linked Facebook Page: **{res['selected_page']['name']}**")
                 else:
@@ -79,11 +108,11 @@ def render() -> None:
         if st.session_state.get("fb_authorize_url"):
             st.link_button("Open Meta authorization", st.session_state["fb_authorize_url"])
 
-    if col[1].button("Test connection"):
+    if col3.button("Test connection"):
         repo.audit("operator", "test.connection", platform.value, "non-publishing test requested")
         st.info("Connection/permission test recorded. A passing result is required before a test post.")
 
-    if col[2].button("Publish test post"):
+    if col4.button("Publish test post"):
         if not st.session_state.get("confirm_test_post"):
             st.session_state["confirm_test_post"] = True
             st.warning("Click again to confirm publishing a real test post to the selected Page.")

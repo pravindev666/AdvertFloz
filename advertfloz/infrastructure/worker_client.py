@@ -110,3 +110,106 @@ def sync_meta_pages(repo: Repository, settings: Settings, page_id: str | None = 
     if data and "selected_page" in data:
         sync_remote_connections(repo, settings)
     return data
+
+
+def upload_media_to_worker(
+    repo: Repository,
+    settings: Settings,
+    image_id: int,
+    filename: str,
+    data: bytes,
+    mime: str = "image/jpeg",
+    sha256: str = "",
+) -> str | None:
+    """Upload media binary to R2 through worker and update local sync state."""
+    import base64
+    import json
+    from advertfloz.domain.enums import SyncState
+
+    b64_data = base64.b64encode(data).decode("ascii")
+    payload = json.dumps({
+        "image_id": image_id,
+        "filename": filename,
+        "mime": mime,
+        "sha256": sha256 or hashlib.sha256(data).hexdigest(),
+        "data_b64": b64_data,
+    })
+    res = call_worker(settings, "/api/media/upload", method="POST", body=payload)
+    if res and res.get("ok"):
+        remote_key = res.get("remote_object_key", f"{image_id}_{filename}")
+        repo.update_sync_state(image_id, SyncState.SYNCED, remote_object_key=remote_key)
+        return remote_key
+    return None
+
+
+def sync_campaign_to_worker(
+    settings: Settings,
+    campaign: Any,
+    revision: Any,
+    posts: list[Any],
+    jobs: list[Any],
+) -> dict[str, Any] | None:
+    """Sync campaign, revision, posts, and jobs to Cloudflare D1 for remote execution."""
+    import json
+
+    payload = json.dumps({
+        "campaign": {
+            "campaign_id": campaign.campaign_id,
+            "name": campaign.name,
+            "campaign_tag": campaign.campaign_tag,
+            "default_timezone": campaign.default_timezone,
+            "start_date": campaign.start_date,
+            "end_date": campaign.end_date,
+            "schema_version": getattr(campaign, "schema_version", "1.7"),
+        } if campaign else None,
+        "revision": {
+            "revision_id": revision.revision_id,
+            "campaign_id": revision.campaign_id,
+            "manifest_hash": revision.manifest_hash,
+            "notes": getattr(revision, "notes", ""),
+        } if revision else None,
+        "posts": [
+            {
+                "post_id": p.post_id,
+                "campaign_id": p.campaign_id,
+                "revision_id": p.revision_id,
+                "image_id": p.image_id,
+                "scheduled_at": p.scheduled_at,
+                "timezone": p.timezone,
+                "platforms": getattr(p, "platforms_str", "") or (",".join(p.platforms) if isinstance(getattr(p, "platforms", None), (list, set)) else str(getattr(p, "platforms", "facebook"))),
+                "caption": p.caption,
+                "facebook_caption": getattr(p, "facebook_caption", ""),
+                "instagram_caption": getattr(p, "instagram_caption", ""),
+                "alt_text": getattr(p, "alt_text", ""),
+                "destination_url": getattr(p, "destination_url", ""),
+                "grace_minutes": getattr(p, "grace_minutes", 60),
+                "campaign_tag": getattr(p, "campaign_tag", ""),
+                "ai_disclosure_status": getattr(p.ai_disclosure_status, "value", str(getattr(p, "ai_disclosure_status", "not_reviewed"))),
+                "enabled": getattr(p, "enabled", True),
+                "notes": getattr(p, "notes", ""),
+            }
+            for p in posts
+        ],
+        "jobs": [
+            {
+                "job_id": getattr(j, "job_id", 0),
+                "campaign_id": j.campaign_id,
+                "revision_id": j.revision_id,
+                "post_id": j.post_id,
+                "platform": getattr(j.platform, "value", str(j.platform)),
+                "target_account_id": getattr(j, "target_account_id", ""),
+                "status": getattr(j.status, "value", str(j.status)),
+                "scheduled_at": j.scheduled_at,
+                "timezone": j.timezone,
+                "due_at_utc": getattr(j, "due_at_utc", ""),
+                "idempotency_key": j.idempotency_key,
+                "attempt_count": getattr(j, "attempt_count", 0),
+                "next_retry_at": getattr(j, "next_retry_at", ""),
+                "remote_post_id": getattr(j, "remote_post_id", ""),
+                "permalink": getattr(j, "permalink", ""),
+            }
+            for j in jobs
+        ],
+    })
+    return call_worker(settings, "/api/campaigns/sync", method="POST", body=payload)
+

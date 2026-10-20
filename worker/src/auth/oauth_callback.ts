@@ -69,24 +69,43 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
   if (!token.payload) return html(`The authorization code could not be exchanged: ${token.error}`, 400);
   const data = token.payload;
 
+  let userToken = data.access_token;
+  try {
+    const llUrl = new URL(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/oauth/access_token`);
+    llUrl.searchParams.set("grant_type", "fb_exchange_token");
+    llUrl.searchParams.set("client_id", env.META_APP_ID);
+    llUrl.searchParams.set("client_secret", env.META_APP_SECRET);
+    llUrl.searchParams.set("fb_exchange_token", userToken);
+    const llResp = await fetch(llUrl.toString());
+    if (llResp.ok) {
+      const llData: any = await llResp.json();
+      if (llData.access_token) {
+        userToken = llData.access_token;
+      }
+    }
+  } catch {
+    // Continue with original token if exchange fails
+  }
+
   let pageId = "";
   let pageName = "";
-  let finalToken = data.access_token;
+  let pageToken = userToken;
+  let pages: Array<{ id: string; name: string; access_token?: string }> = [];
 
   if (row.provider === "facebook") {
     try {
       const pagesResp = await fetch(
-        `https://graph.facebook.com/${env.META_GRAPH_VERSION}/me/accounts?fields=id,name,access_token,tasks&access_token=${data.access_token}`
+        `https://graph.facebook.com/${env.META_GRAPH_VERSION}/me/accounts?fields=id,name,access_token,tasks&access_token=${userToken}`
       );
       if (pagesResp.ok) {
         const pagesData: any = await pagesResp.json();
-        const pages = pagesData.data ?? [];
+        pages = pagesData.data ?? [];
         if (pages.length > 0) {
           const selected = pages[0];
           pageId = selected.id ?? "";
           pageName = selected.name ?? "";
           if (selected.access_token) {
-            finalToken = selected.access_token;
+            pageToken = selected.access_token;
           }
         }
       }
@@ -95,7 +114,15 @@ export async function handleOAuthCallback(request: Request, env: Env): Promise<R
     }
   }
 
-  const sealed = await sealToken(finalToken, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
+  const tokenPayload = JSON.stringify({
+    user_token: userToken,
+    page_token: pageToken,
+    page_id: pageId,
+    page_name: pageName,
+    pages: pages.map((p) => ({ id: p.id, name: p.name, access_token: p.access_token })),
+  });
+
+  const sealed = await sealToken(tokenPayload, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
   const now = new Date().toISOString();
   const expiresAt = data.expires_in ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString() : "";
   const stateStr = pageId ? "test_passed" : "connected_no_target";

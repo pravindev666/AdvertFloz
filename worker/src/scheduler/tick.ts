@@ -8,6 +8,7 @@
  */
 import type { Env } from "../env";
 import * as meta from "../meta/publish";
+import { openToken } from "../auth/crypto";
 
 export const CLAIMABLE = ["QUEUED", "PROCESSING_MEDIA"];
 export const BASE_BACKOFF_SECONDS = 60;
@@ -163,8 +164,53 @@ async function raiseIncident(
     .run();
 }
 
+async function resolvePlatformToken(env: Env, platform: string): Promise<string | null> {
+  const provider = platform === "facebook" ? "facebook" : "instagram";
+  const conn = await env.DB.prepare(
+    "SELECT connection_id, state FROM connections WHERE provider = ?"
+  )
+    .bind(provider)
+    .first<{ connection_id: number; state: string }>();
+
+  if (!conn || (conn.state !== "ready" && conn.state !== "test_passed")) {
+    return null;
+  }
+
+  const tokenRow = await env.DB.prepare(
+    "SELECT key_id, nonce, ciphertext FROM connection_tokens WHERE connection_id = ?"
+  )
+    .bind(conn.connection_id)
+    .first<{ key_id: string; nonce: string; ciphertext: string }>();
+
+  if (!tokenRow) return null;
+
+  try {
+    const raw = await openToken(
+      { keyId: tokenRow.key_id, nonce: tokenRow.nonce, ciphertext: tokenRow.ciphertext },
+      env.TOKEN_ENCRYPTION_KEY,
+    );
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed.page_token || parsed.user_token || raw;
+      }
+    } catch {
+      // raw token
+    }
+    return raw;
+  } catch (err) {
+    console.error("Failed to decrypt token for", provider, err);
+    return null;
+  }
+}
+
 async function dispatchFacebook(env: Env, job: JobRow, result: TickResult): Promise<void> {
-  const token = env.META_APP_SECRET; // demo placeholder resolution happens in meta/publish
+  const token = await resolvePlatformToken(env, "facebook");
+  if (!token) {
+    const label = await applyError(env, job, "auth", "missing or unreadable Facebook page access token");
+    tally(result, label);
+    return;
+  }
   const outcome = await meta.publishFacebookPhoto(env, job, token);
   if (outcome.ok) {
     await env.DB.prepare(
@@ -181,7 +227,12 @@ async function dispatchFacebook(env: Env, job: JobRow, result: TickResult): Prom
 }
 
 async function dispatchInstagram(env: Env, job: JobRow, result: TickResult): Promise<void> {
-  const token = env.META_APP_SECRET;
+  const token = (await resolvePlatformToken(env, "instagram")) || (await resolvePlatformToken(env, "facebook"));
+  if (!token) {
+    const label = await applyError(env, job, "auth", "missing or unreadable Instagram/Facebook access token");
+    tally(result, label);
+    return;
+  }
   const stage = job.last_stage || "CREATE_CONTAINER";
   if (stage === "CREATE_CONTAINER") {
     const created = await meta.createContainer(env, job, token);

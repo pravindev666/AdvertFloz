@@ -328,13 +328,8 @@ def force_publish_all_today(
     except Exception:
         pass
 
-    # 2. Sync updated schedule to Cloudflare D1
-    campaign = repo.get_campaign(campaign_id)
-    revision = repo.latest_revision(campaign_id) if hasattr(repo, "latest_revision") else None
-    posts = repo.list_posts(campaign_id, revision_id)
-    all_jobs = repo.list_jobs(campaign_id=campaign_id, revision_id=revision_id)
-    if campaign:
-        sync_campaign_to_worker(settings, campaign, revision, posts, all_jobs)
+    # 2. Upload images to R2, activate jobs, and sync schedule to Cloudflare D1
+    activate_and_push_campaign(repo, settings, campaign_id, revision_id)
 
     # 3. Trigger worker tick(s) to publish all
     total_published = 0

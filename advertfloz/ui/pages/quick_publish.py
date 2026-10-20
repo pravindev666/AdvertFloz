@@ -48,12 +48,34 @@ def _persist_plan():
         st.session_state["qp_committed"] = False
 
 
+def _extract_zips_to_media(zips_data: list[tuple[str, bytes]], target_dir: Path | str = "data/media") -> int:
+    """Extract JPEG/PNG image files from zip bytes directly into data/media directory."""
+    import io
+    import zipfile
+    dest = Path(target_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for _, zbytes in zips_data:
+        try:
+            with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zf:
+                for member in zf.infolist():
+                    if not member.is_dir() and member.filename.lower().endswith((".jpg", ".jpeg", ".png")):
+                        fn = Path(member.filename).name
+                        (dest / fn).write_bytes(zf.read(member.filename))
+                        count += 1
+        except Exception:
+            pass
+    return count
+
+
 def _persist_zips():
     """Callback: fires when the ZIP uploader changes."""
     uploaded = st.session_state.get("qp_zip_files")
     if uploaded:
-        st.session_state["qp_persisted_zips"] = [(f.name, f.getvalue()) for f in uploaded]
+        items = [(f.name, f.getvalue()) for f in uploaded]
+        st.session_state["qp_persisted_zips"] = items
         st.session_state["qp_committed"] = False
+        _extract_zips_to_media(items)
 
 
 # ── main render ──────────────────────────────────────────────────────────
@@ -475,6 +497,8 @@ def render() -> None:
             help="Upload images to R2, queue all jobs, and sync schedule",
         ):
             with st.spinner("Uploading images & syncing schedule…"):
+                if st.session_state.get("qp_persisted_zips"):
+                    _extract_zips_to_media(st.session_state["qp_persisted_zips"])
                 res = activate_and_push_campaign(
                     repo,
                     settings,
@@ -519,6 +543,8 @@ def render() -> None:
             help="Override all scheduled dates to TODAY and publish all posts immediately to Facebook for testing",
         ):
             with st.spinner("Setting all posts to Due Now and publishing to Facebook…"):
+                if st.session_state.get("qp_persisted_zips"):
+                    _extract_zips_to_media(st.session_state["qp_persisted_zips"])
                 force_res = force_publish_all_today(
                     repo,
                     settings,

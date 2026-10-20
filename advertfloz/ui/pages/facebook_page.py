@@ -37,15 +37,21 @@ def render() -> None:
 
     conn = repo.get_connection(platform)
     if conn and conn.page_name:
-        st.success(f"Connected Facebook Page: **{conn.page_name}** (Page ID: `{conn.page_id}`)")
+        st.success(f"Active Target Page: **{conn.page_name}** (Page ID: `{conn.page_id}`)")
 
-    # Page selector for multiple pages
+    # Auto-load available pages from Worker if not in session state
+    if conn and "available_fb_pages" not in st.session_state and settings.worker_configured:
+        res = sync_meta_pages(repo, settings)
+        if res and res.get("pages"):
+            st.session_state["available_fb_pages"] = res["pages"]
+
     available_pages = st.session_state.get("available_fb_pages", [])
     if not available_pages and conn and conn.page_id:
         available_pages = [{"id": conn.page_id, "name": conn.page_name or conn.page_id}]
 
-    if available_pages and len(available_pages) > 1:
+    if conn and available_pages:
         st.markdown('<div class="afz-section-title">Target Facebook Page</div>', unsafe_allow_html=True)
+        st.caption("All scheduled posts in your Calendar and Queue will publish to this target page.")
         current_page_idx = 0
         for idx, p in enumerate(available_pages):
             if conn and p["id"] == conn.page_id:

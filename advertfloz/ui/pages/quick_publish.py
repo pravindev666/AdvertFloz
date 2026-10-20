@@ -408,6 +408,56 @@ def render() -> None:
                     st.info(f"Worker response: {tick_res}")
             st.rerun()
 
+    # ── Daily Post Tracker (Indications & Schedule) ───────────────────
+    st.markdown("---")
+    st.markdown("### 📅 Daily Schedule & Post Tracker")
+    st.caption("Here is where you check in everyday to see exactly which posts are published, scheduled, or need attention.")
+
+    if jobs:
+        # Sort jobs by scheduled_at ascending
+        sorted_jobs = sorted(jobs, key=lambda j: j.scheduled_at or "")
+
+        # Find the next upcoming job
+        next_job = next(
+            (j for j in sorted_jobs if j.status in {JobStatus.DRAFT, JobStatus.QUEUED, JobStatus.APPROVED}),
+            None,
+        )
+
+        # Highlight box for today / next action
+        if failed_count > 0:
+            st.error(f"⚠️ **Attention Needed:** {failed_count} post(s) failed. Check the table below for details.")
+        elif next_job:
+            st.info(
+                f"⏳ **Next Post in Line:** `{next_job.post_id}` scheduled for **{next_job.scheduled_at}** to **{conn.page_name if conn else 'Facebook'}**"
+            )
+        elif published_count > 0 and published_count == len(sorted_jobs):
+            st.success("🎉 **All scheduled posts in this campaign have been published!**")
+
+        # Visual Table of all posts
+        table_rows = []
+        for j in sorted_jobs:
+            if j.status == JobStatus.PUBLISHED:
+                status_icon = "🟢 Published"
+            elif j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}:
+                status_icon = "🔴 Failed"
+            elif j.status == JobStatus.QUEUED:
+                status_icon = "⏳ Queued (Auto-Publishing)"
+            else:
+                status_icon = f"⚪ {j.status.value}"
+
+            row_data = {
+                "Post": j.post_id,
+                "Status": status_icon,
+                "Scheduled Time": j.scheduled_at or "Immediate",
+                "FB Post ID": j.remote_post_id or "—",
+                "Last Error": (j.last_error_class.value if j.last_error_class else "None") if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT} else "—",
+            }
+            table_rows.append(row_data)
+
+        st.dataframe(table_rows, use_container_width=True)
+    else:
+        st.info("No posts queued yet. Complete Step 1 and Step 2 above to load your campaign.")
+
 
 if __name__ == "__main__":
     render()

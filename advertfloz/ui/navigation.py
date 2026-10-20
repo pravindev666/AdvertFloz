@@ -12,21 +12,34 @@ from ..domain.enums import Platform
 from .runtime import enforce_hosted_gate, first_run_complete, get_repo, get_settings
 from .theme.styles import apply_theme
 
-PAGES = {
+PAGES_MAIN = {
     "Overview": "advertfloz/ui/pages/overview.py",
+    "Quick Publish": "advertfloz/ui/pages/quick_publish.py",
+    "Calendar": "advertfloz/ui/pages/calendar.py",
+}
+
+PAGES_TOOLS = {
     "Marketing Prompt Builder": "advertfloz/ui/pages/prompt_builder.py",
     "Campaign Import": "advertfloz/ui/pages/campaign_import.py",
-    "Calendar": "advertfloz/ui/pages/calendar.py",
     "Image Production": "advertfloz/ui/pages/image_production.py",
     "Publishing Queue": "advertfloz/ui/pages/publishing_queue.py",
+}
+
+PAGES_CONNECTIONS = {
     "Facebook Page": "advertfloz/ui/pages/facebook_page.py",
     "Instagram": "advertfloz/ui/pages/instagram.py",
     "Tunnel Helper (Instagram)": "advertfloz/ui/pages/tunnel_helper.py",
     "Connections & Credentials": "advertfloz/ui/pages/connections.py",
+}
+
+PAGES_SYSTEM = {
     "Reliability & Incidents": "advertfloz/ui/pages/reliability.py",
     "Reports & Export": "advertfloz/ui/pages/reports.py",
     "Settings & Recovery": "advertfloz/ui/pages/settings.py",
 }
+
+# Flat dict for backward compatibility (used by page_link etc.)
+PAGES = {**PAGES_MAIN, **PAGES_TOOLS, **PAGES_CONNECTIONS, **PAGES_SYSTEM}
 WIZARD = "advertfloz/ui/pages/first_run_wizard.py"
 
 
@@ -88,8 +101,12 @@ def run() -> None:
 
     if not first_run_complete():
         pages = [st.Page(WIZARD, title="First-run setup", icon=":material/rocket_launch:")]
+        navigation = st.navigation({"AdvertFloz": pages})
     else:
-        pages = [st.Page(path, title=title) for title, path in PAGES.items()]
-
-    navigation = st.navigation({"AdvertFloz": pages})
+        navigation = st.navigation({
+            "Main": [st.Page(path, title=title, icon=":material/rocket_launch:" if title == "Quick Publish" else None) for title, path in PAGES_MAIN.items()],
+            "Tools": [st.Page(path, title=title) for title, path in PAGES_TOOLS.items()],
+            "Connections": [st.Page(path, title=title) for title, path in PAGES_CONNECTIONS.items()],
+            "System": [st.Page(path, title=title) for title, path in PAGES_SYSTEM.items()],
+        })
     navigation.run()

@@ -89,13 +89,30 @@ export async function publishFacebookPhoto(env: Env, job: JobLike, token: string
   if (!pageId || !mediaUrl) {
     return { ok: false, remoteId: "", permalink: "", errorClass: "auth", summary: "missing page target or media URL" };
   }
-  // Meta Graph API requires 'message' for the text to appear in the Facebook Timeline feed stream.
-  return call(env, "POST", `${pageId}/photos`, token, {
+
+  // ── Two-step feed-post approach (matches manual "What's on my mind" posting) ──
+  //
+  // Step 1: Upload the photo as UNPUBLISHED to get a photo_id.
+  //         This does NOT create any visible post or album entry.
+  const uploadOutcome = await call(env, "POST", `${pageId}/photos`, token, {
     url: mediaUrl,
-    message: caption,
-    caption: caption,
-    published: "true",
+    published: "false",
   });
+  if (!uploadOutcome.ok || !uploadOutcome.remoteId) {
+    return { ...uploadOutcome, summary: `photo upload failed: ${uploadOutcome.summary}` };
+  }
+
+  // Step 2: Create a FEED POST with the photo attached.
+  //         This is exactly what Facebook does when you use "What's on your mind?"
+  //         → type a caption → attach a photo → click Post.
+  //         The result is a scrollable feed post, NOT a Photos album entry.
+  //
+  //         Facebook expects: attached_media[0]={"media_fbid":"PHOTO_ID"}
+  const feedOutcome = await call(env, "POST", `${pageId}/feed`, token, {
+    message: caption,
+    "attached_media[0]": JSON.stringify({ media_fbid: uploadOutcome.remoteId }),
+  });
+  return feedOutcome;
 }
 
 export async function createContainer(env: Env, job: JobLike, token: string): Promise<Outcome & { containerId: string }> {

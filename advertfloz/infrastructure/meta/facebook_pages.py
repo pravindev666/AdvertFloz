@@ -69,10 +69,26 @@ def publish_test_post(client: GraphClient, page_id: str, page_token: str, messag
 
 
 def publish_photo(client: GraphClient, page_id: str, page_token: str, image_url: str, caption: str) -> PublishResult:
-    """Publish a single-image feed post."""
-    resp = client.post(
+    """Publish a single-image feed post (matches manual 'What's on your mind' posting)."""
+    import json
+    # Step 1: Upload photo as unpublished to get media_fbid without creating an album post
+    upload_resp = client.post(
         f"{page_id}/photos",
-        {"url": image_url, "message": caption, "caption": caption, "published": "true"},
+        {"url": image_url, "published": "false"},
         page_token,
     )
-    return PublishResult.from_response(resp, id_keys=("post_id", "id"))
+    if not upload_resp.ok:
+        return PublishResult.from_response(upload_resp, id_keys=("id",))
+
+    photo_id = upload_resp.json.get("id")
+
+    # Step 2: Create a feed post with the photo attached
+    feed_resp = client.post(
+        f"{page_id}/feed",
+        {
+            "message": caption,
+            "attached_media[0]": json.dumps({"media_fbid": photo_id}),
+        },
+        page_token,
+    )
+    return PublishResult.from_response(feed_resp, id_keys=("post_id", "id"))

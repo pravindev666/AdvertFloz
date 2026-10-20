@@ -15,6 +15,8 @@ from advertfloz.application.services.campaign_revision import commit_import
 from advertfloz.domain.enums import JobStatus, Platform, ProductionState
 from advertfloz.infrastructure.worker_client import (
     activate_and_push_campaign,
+    fetch_worker_jobs,
+    force_publish_all_today,
     sync_meta_pages,
     sync_remote_connections,
     trigger_worker_tick,
@@ -330,6 +332,11 @@ def render() -> None:
     # ── Status metrics ────────────────────────────────────────────────
     st.markdown("---")
 
+    # Sync latest live job statuses from Cloudflare D1
+    if settings.worker_configured and not st.session_state.get("qp_jobs_synced"):
+        fetch_worker_jobs(repo, settings)
+        st.session_state["qp_jobs_synced"] = True
+
     jobs = repo.list_jobs(platform=platform)
     draft_count = sum(
         1
@@ -362,7 +369,7 @@ def render() -> None:
         else None
     )
 
-    col_push, col_now = st.columns(2)
+    col_push, col_now, col_force = st.columns([1.2, 1, 1.2])
 
     with col_push:
         if st.button(
@@ -392,12 +399,13 @@ def render() -> None:
 
     with col_now:
         if st.button(
-            "⚡ Publish Due Posts Now",
+            "⚡ Publish Due Now",
             use_container_width=True,
             help="Immediately publish any posts whose scheduled time has arrived",
         ):
             with st.spinner("Triggering Worker…"):
                 tick_res = trigger_worker_tick(settings)
+                fetch_worker_jobs(repo, settings)
                 if tick_res and tick_res.get("ok"):
                     r = tick_res.get("result", {})
                     st.success(
@@ -406,6 +414,26 @@ def render() -> None:
                     )
                 else:
                     st.info(f"Worker response: {tick_res}")
+            st.rerun()
+
+    with col_force:
+        if st.button(
+            "🧪 Publish ALL Today (Test)",
+            use_container_width=True,
+            help="Override all scheduled dates to TODAY and publish all posts immediately to Facebook for testing",
+        ):
+            with st.spinner("Setting all posts to Due Now and publishing to Facebook…"):
+                force_res = force_publish_all_today(
+                    repo,
+                    settings,
+                    campaign.campaign_id,
+                    rev.revision_id if rev else 1,
+                )
+                pub = force_res.get("published", 0)
+                if pub > 0:
+                    st.success(f"🎉 Successfully published {pub} post(s) to Facebook!")
+                else:
+                    st.info(f"Worker tick completed. Claimed: {force_res.get('claimed', 0)}, Published: {pub}. Check table below.")
             st.rerun()
 
     # ── Daily Post Tracker (Indications & Schedule) ───────────────────

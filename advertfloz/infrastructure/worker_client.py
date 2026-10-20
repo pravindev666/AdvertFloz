@@ -279,3 +279,81 @@ def activate_and_push_campaign(
         "sync_response": sync_res,
     }
 
+
+def fetch_worker_jobs(repo: Repository, settings: Settings) -> list[dict[str, Any]]:
+    """Fetch live job statuses from Cloudflare D1 and update local SQLite repository."""
+    if not settings.worker_configured:
+        return []
+    data = call_worker(settings, "/api/jobs")
+    if not data or "jobs" not in data:
+        return []
+    for r in data["jobs"]:
+        job_id = r.get("job_id")
+        status = r.get("status")
+        remote_id = r.get("remote_post_id")
+        permalink = r.get("permalink")
+        if job_id and status:
+            try:
+                repo.conn.execute(
+                    "UPDATE platform_jobs SET status=?, remote_post_id=?, permalink=? WHERE job_id=?",
+                    (status, remote_id or "", permalink or "", job_id),
+                )
+            except Exception:
+                pass
+    try:
+        repo.conn.commit()
+    except Exception:
+        pass
+    return data["jobs"]
+
+
+def force_publish_all_today(
+    repo: Repository,
+    settings: Settings,
+    campaign_id: str,
+    revision_id: int,
+) -> dict[str, Any]:
+    """Override schedule dates to NOW for all queued jobs and immediately tick worker to publish them."""
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1. Update local database so due_at_utc is right now
+    try:
+        repo.conn.execute(
+            "UPDATE platform_jobs SET due_at_utc = ? WHERE status IN ('QUEUED', 'DRAFT', 'APPROVED', 'READY_FOR_REVIEW')",
+            (now_iso,),
+        )
+        repo.conn.commit()
+    except Exception:
+        pass
+
+    # 2. Sync updated schedule to Cloudflare D1
+    campaign = repo.get_campaign(campaign_id)
+    revision = repo.latest_revision(campaign_id) if hasattr(repo, "latest_revision") else None
+    posts = repo.list_posts(campaign_id, revision_id)
+    all_jobs = repo.list_jobs(campaign_id=campaign_id, revision_id=revision_id)
+    if campaign:
+        sync_campaign_to_worker(settings, campaign, revision, posts, all_jobs)
+
+    # 3. Trigger worker tick(s) to publish all
+    total_published = 0
+    total_claimed = 0
+    for _ in range(6):
+        tick_res = trigger_worker_tick(settings)
+        if tick_res and tick_res.get("ok"):
+            r = tick_res.get("result", {})
+            pub = r.get("published", 0)
+            claimed = r.get("claimed", 0)
+            total_published += pub
+            total_claimed += claimed
+            if pub == 0 and claimed == 0:
+                break
+        else:
+            break
+
+    # 4. Pull live statuses from Cloudflare D1 back to local SQLite
+    fetch_worker_jobs(repo, settings)
+
+    return {"published": total_published, "claimed": total_claimed}
+

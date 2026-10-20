@@ -210,6 +210,21 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       return json({ error: String(err?.message || err) }, 500);
     }
   }
+  if (path === "/api/campaigns/delete" && request.method === "POST") {
+    try {
+      const body: any = await request.json();
+      const campaignId = String(body.campaign_id || "");
+      if (campaignId) {
+        await env.DB.prepare("DELETE FROM platform_jobs WHERE campaign_id = ?").bind(campaignId).run();
+        await env.DB.prepare("DELETE FROM posts WHERE campaign_id = ?").bind(campaignId).run();
+        await env.DB.prepare("DELETE FROM campaign_revisions WHERE campaign_id = ?").bind(campaignId).run();
+        await env.DB.prepare("DELETE FROM campaigns WHERE campaign_id = ?").bind(campaignId).run();
+      }
+      return json({ ok: true, campaign_id: campaignId });
+    } catch (err: any) {
+      return json({ error: String(err?.message || err) }, 500);
+    }
+  }
   if (path === "/api/control/pause" || path === "/api/control/resume") {
     const target = new URL(request.url).searchParams.get("target") ?? "all";
     const key = target === "all" ? "pause_all" : `pause_${target}`;

@@ -357,3 +357,11 @@ def force_publish_all_today(
 
     return {"published": total_published, "claimed": total_claimed}
 
+
+def delete_worker_campaign(settings: Settings, campaign_id: str) -> bool:
+    """Delete a campaign and its jobs/posts from Cloudflare D1."""
+    if not settings.worker_configured:
+        return True
+    res = call_worker(settings, "/api/campaigns/delete", method="POST", body=f'{{"campaign_id": "{campaign_id}"}}')
+    return bool(res and res.get("ok"))
+

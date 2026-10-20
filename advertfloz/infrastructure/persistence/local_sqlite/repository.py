@@ -113,6 +113,13 @@ class Repository:
         rows = self.conn.execute("SELECT campaign_id FROM campaigns ORDER BY created_at").fetchall()
         return [c for c in (self.get_campaign(r["campaign_id"]) for r in rows) if c]
 
+    def delete_campaign(self, campaign_id: str) -> None:
+        with transaction(self.conn):
+            self.conn.execute("DELETE FROM platform_jobs WHERE campaign_id=?", (campaign_id,))
+            self.conn.execute("DELETE FROM posts WHERE campaign_id=?", (campaign_id,))
+            self.conn.execute("DELETE FROM campaign_revisions WHERE campaign_id=?", (campaign_id,))
+            self.conn.execute("DELETE FROM campaigns WHERE campaign_id=?", (campaign_id,))
+
     # ------------------------------------------------------------- revisions
     def create_revision(self, campaign_id: str, manifest_hash: str, created_by: str = "operator", notes: str = "") -> int:
         with transaction(self.conn):

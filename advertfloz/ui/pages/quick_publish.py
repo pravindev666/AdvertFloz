@@ -1,7 +1,7 @@
-"""🚀 Quick Publish – Upload, approve, and push to Facebook in one page.
+"""🚀 Quick Publish – Pipeline Switcher, Upload, Approve, and Publish.
 
-Combines the essential actions from Campaign Import, Image Production,
-Facebook Page, and Publishing Queue into a single streamlined workflow.
+Supports multiple independent campaign pipelines (e.g. MusikFlo Campaign 1 & 2,
+Rashinos Campaign 1 & 2) with overlapping schedules and dedicated target pages.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from advertfloz.application.services.campaign_revision import commit_import
 from advertfloz.domain.enums import JobStatus, Platform, ProductionState
 from advertfloz.infrastructure.worker_client import (
     activate_and_push_campaign,
+    delete_worker_campaign,
     fetch_worker_jobs,
     force_publish_all_today,
     sync_meta_pages,
@@ -44,7 +45,6 @@ def _persist_plan():
     uploaded = st.session_state.get("qp_plan_csv")
     if uploaded is not None:
         st.session_state["qp_persisted_plan"] = (uploaded.name, uploaded.getvalue())
-        # Reset committed flag so re-upload triggers re-validation
         st.session_state["qp_committed"] = False
 
 
@@ -64,13 +64,120 @@ def render() -> None:
     repo = get_repo()
 
     st.markdown(
-        '<div class="afz-page-title">🚀 Quick Publish</div>',
+        '<div class="afz-page-title">🚀 Quick Publish & Pipeline Manager</div>',
         unsafe_allow_html=True,
     )
     st.caption(
-        "Upload your campaign CSV and image ZIP, review, pick your "
-        "Facebook page, and publish — all in one place."
+        "Manage multiple publishing pipelines (MusikFlo, Rashinos, etc.). "
+        "Switch between pipelines, schedule overlapping daily posts, and track live status."
     )
+
+    # ═══════════════════════════════════════════════════════════════════
+    #  PIPELINE / CAMPAIGN SWITCHER & MANAGER
+    # ═══════════════════════════════════════════════════════════════════
+    campaigns = repo.list_campaigns()
+
+    # Track currently selected pipeline ID
+    if "qp_selected_campaign_id" not in st.session_state:
+        st.session_state["qp_selected_campaign_id"] = (
+            campaigns[-1].campaign_id if campaigns else "campaign-1"
+        )
+
+    current_campaign_id = st.session_state["qp_selected_campaign_id"]
+    camp_ids = [c.campaign_id for c in campaigns]
+
+    if current_campaign_id not in camp_ids and campaigns:
+        current_campaign_id = camp_ids[-1]
+        st.session_state["qp_selected_campaign_id"] = current_campaign_id
+
+    st.markdown("---")
+    c_pipe1, c_pipe2, c_pipe3 = st.columns([3, 1.2, 1.2])
+
+    with c_pipe1:
+        if campaigns:
+            idx = camp_ids.index(current_campaign_id) if current_campaign_id in camp_ids else 0
+            selected = st.selectbox(
+                "📁 Active Campaign Pipeline",
+                options=camp_ids,
+                index=idx,
+                format_func=lambda cid: f"📦 {next((c.name for c in campaigns if c.campaign_id == cid), cid)} ({cid})",
+                key="qp_pipeline_dropdown",
+            )
+            if selected != current_campaign_id:
+                st.session_state["qp_selected_campaign_id"] = selected
+                st.session_state["qp_persisted_plan"] = None
+                st.session_state["qp_persisted_zips"] = []
+                st.session_state["qp_committed"] = False
+                st.rerun()
+        else:
+            st.info("No active pipelines. Click **➕ New Pipeline** to create one for MusikFlo or Rashinos.")
+
+    with c_pipe2:
+        st.write("")
+        st.write("")
+        if st.button("➕ New Pipeline", use_container_width=True):
+            st.session_state["qp_show_new_form"] = not st.session_state.get("qp_show_new_form", False)
+
+    with c_pipe3:
+        st.write("")
+        st.write("")
+        if campaigns:
+            if st.button(
+                "🗑️ Delete Pipeline",
+                type="secondary",
+                use_container_width=True,
+                help=f"Permanently remove pipeline '{current_campaign_id}' and all its posts",
+            ):
+                with st.spinner(f"Deleting pipeline '{current_campaign_id}'…"):
+                    repo.delete_campaign(current_campaign_id)
+                    delete_worker_campaign(settings, current_campaign_id)
+                    remaining = repo.list_campaigns()
+                    st.session_state["qp_selected_campaign_id"] = (
+                        remaining[-1].campaign_id if remaining else "campaign-1"
+                    )
+                    st.session_state["qp_persisted_plan"] = None
+                    st.session_state["qp_persisted_zips"] = []
+                    st.session_state["qp_committed"] = False
+                st.success("Pipeline deleted!")
+                st.rerun()
+
+    # Form to create a new pipeline
+    if st.session_state.get("qp_show_new_form", False):
+        with st.form("qp_create_new_pipeline_form"):
+            st.markdown("#### ➕ Create New Campaign Pipeline")
+            st.caption("E.g. create `rashinos-campaign-1` or a 2nd batch for `musikflo-fall-promo`.")
+            new_title = st.text_input(
+                "Pipeline Display Name",
+                placeholder="e.g. Rashinos Daily Specials (4 posts/day)",
+            )
+            auto_id = (
+                new_title.lower().replace(" ", "-").replace("_", "-").strip()
+                if new_title
+                else ""
+            )
+            new_id = st.text_input(
+                "Pipeline ID (URL-safe)",
+                value=auto_id,
+                placeholder="e.g. rashinos-campaign-1",
+            )
+            f_col1, f_col2 = st.columns(2)
+            c_submit = f_col1.form_submit_button("Create Pipeline", type="primary", use_container_width=True)
+            c_cancel = f_col2.form_submit_button("Cancel", use_container_width=True)
+
+            if c_submit and new_id:
+                st.session_state["qp_selected_campaign_id"] = new_id
+                st.session_state["qp_persisted_plan"] = None
+                st.session_state["qp_persisted_zips"] = []
+                st.session_state["qp_committed"] = False
+                st.session_state["qp_show_new_form"] = False
+                st.success(f"Pipeline '{new_id}' created! Drop your CSV + ZIP below.")
+                st.rerun()
+            elif c_cancel:
+                st.session_state["qp_show_new_form"] = False
+                st.rerun()
+
+    active_campaign_id = st.session_state.get("qp_selected_campaign_id", "campaign-1")
+    campaign = repo.get_campaign(active_campaign_id)
 
     # Persistent state across Streamlit reruns
     st.session_state.setdefault("qp_persisted_plan", None)
@@ -81,7 +188,7 @@ def render() -> None:
     #  STEP 1 — UPLOAD
     # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("### 📁  Step 1 · Upload Your Content")
+    st.markdown(f"### 📁  Step 1 · Upload Content for `{active_campaign_id}`")
     st.caption(
         "Drop your **campaign_plan.csv** (schedules & captions) and your "
         "**image ZIP** (1.jpg, 2.jpg …) side by side."
@@ -120,9 +227,6 @@ def render() -> None:
     plan_item = st.session_state.get("qp_persisted_plan")
     zip_items = st.session_state.get("qp_persisted_zips") or []
 
-    campaigns = repo.list_campaigns()
-    campaign = campaigns[-1] if campaigns else None
-
     if plan_item and zip_items and not st.session_state.get("qp_committed"):
         limits = ImportLimits(
             max_image_bytes=settings.max_image_bytes,
@@ -134,8 +238,8 @@ def render() -> None:
 
         with st.spinner("Validating campaign…"):
             result = assemble_import(
-                campaign_id="campaign-1",
-                campaign_name="campaign-1",
+                campaign_id=active_campaign_id,
+                campaign_name=active_campaign_id,
                 revision_id=1,
                 plan_path=plan_paths[0],
                 zip_paths=zip_paths,
@@ -158,12 +262,12 @@ def render() -> None:
                 f"{counts.get('instagram', 0)} IG jobs"
             )
             if st.button(
-                "📥 Import Campaign", type="primary", use_container_width=True
+                f"📥 Import into '{active_campaign_id}'", type="primary", use_container_width=True
             ):
                 with st.spinner("Committing campaign…"):
-                    commit_import(repo, result)
+                    commit_import(repo, result, campaign_name=active_campaign_id)
                     st.session_state["qp_committed"] = True
-                st.success("🎉 Campaign imported!")
+                st.success(f"🎉 Pipeline '{active_campaign_id}' imported!")
                 st.rerun()
         else:
             missing = result.missing_image_ids()
@@ -171,12 +275,21 @@ def render() -> None:
                 st.warning(f"⚠️ Missing images: {missing[:20]}")
 
     elif st.session_state.get("qp_committed") or campaign is not None:
-        st.success("✅ Campaign is imported and ready.")
+        st.success(f"✅ Pipeline '{active_campaign_id}' is ready.")
 
     # ═══════════════════════════════════════════════════════════════════
-    #  STEP 2 — REVIEW & APPROVE
+    #  STEP 2 — REVIEW & APPROVE (Scoped to this pipeline)
     # ═══════════════════════════════════════════════════════════════════
-    assets = repo.list_assets()
+    rev = repo.latest_revision(active_campaign_id) if campaign else None
+    posts = repo.list_posts(active_campaign_id, rev.revision_id if rev else 1) if campaign else []
+    all_assets = repo.list_assets()
+
+    if posts:
+        post_img_ids = {p.image_id for p in posts}
+        assets = [a for a in all_assets if a.image_id in post_img_ids]
+    else:
+        assets = all_assets if not campaigns else []
+
     if assets:
         st.markdown("---")
         st.markdown("### 👁️  Step 2 · Review & Approve Images")
@@ -192,7 +305,6 @@ def render() -> None:
             unsafe_allow_html=True,
         )
 
-        # Approve All
         if ready_count < total_count:
             if st.button(
                 "✅ Approve All Images",
@@ -213,7 +325,6 @@ def render() -> None:
         else:
             st.success("All images are approved ✓")
 
-        # Image grid (first 12)
         display_count = min(total_count, 12)
         grid_cols = st.columns(min(4, display_count) or 1)
         for idx, asset in enumerate(assets[:display_count]):
@@ -236,28 +347,22 @@ def render() -> None:
                     st.image(str(media), width=140)
 
         if total_count > 12:
-            st.caption(
-                f"… and {total_count - 12} more. "
-                "See all in **Image Production** (sidebar)."
-            )
+            st.caption(f"… and {total_count - 12} more images in this pipeline.")
 
     # ═══════════════════════════════════════════════════════════════════
     #  STEP 3 — TARGET PAGE & PUBLISH
     # ═══════════════════════════════════════════════════════════════════
-    # Refresh campaign ref (may have been committed above)
     if campaign is None:
-        campaigns = repo.list_campaigns()
-        campaign = campaigns[-1] if campaigns else None
+        campaign = repo.get_campaign(active_campaign_id)
 
     if campaign is None:
-        return  # Nothing to publish yet
+        return
 
     st.markdown("---")
-    st.markdown("### 🎯  Step 3 · Select Facebook Page & Publish")
+    st.markdown(f"### 🎯  Step 3 · Target Facebook Page for `{active_campaign_id}`")
 
     platform = Platform.FACEBOOK
 
-    # ── Sync connections on first load ────────────────────────────────
     if settings.mode == "remote" and settings.worker_configured:
         conn = repo.get_connection(platform)
         if conn is None:
@@ -276,7 +381,6 @@ def render() -> None:
             {"id": conn.page_id, "name": conn.page_name or conn.page_id}
         ]
 
-    # ── Page selector ─────────────────────────────────────────────────
     if conn and available_pages:
         current_idx = 0
         for idx, p in enumerate(available_pages):
@@ -294,7 +398,7 @@ def render() -> None:
 
         if selected_page and selected_page["id"] != conn.page_id:
             if st.button(
-                f"Switch to {selected_page.get('name')}", type="secondary"
+                f"Switch Target Page to {selected_page.get('name')}", type="secondary"
             ):
                 with st.spinner(f"Switching to {selected_page.get('name')}…"):
                     sync_meta_pages(
@@ -313,7 +417,6 @@ def render() -> None:
         st.warning("Facebook is not connected yet.")
         st.link_button("🔗 Connect Facebook", oauth_url)
 
-    # Refresh pages
     if settings.worker_configured:
         if st.button(
             "🔄 Refresh Facebook Pages",
@@ -329,15 +432,14 @@ def render() -> None:
                     st.info("Synced connection state.")
             st.rerun()
 
-    # ── Status metrics ────────────────────────────────────────────────
+    # ── Status metrics (Scoped to active_campaign_id) ─────────────────
     st.markdown("---")
 
-    # Sync latest live job statuses from Cloudflare D1
     if settings.worker_configured and not st.session_state.get("qp_jobs_synced"):
         fetch_worker_jobs(repo, settings)
         st.session_state["qp_jobs_synced"] = True
 
-    jobs = repo.list_jobs(platform=platform)
+    jobs = repo.list_jobs(campaign_id=active_campaign_id, platform=platform)
     draft_count = sum(
         1
         for j in jobs
@@ -363,12 +465,6 @@ def render() -> None:
     mc3.metric("❌ Failed", failed_count)
 
     # ── Publish buttons ───────────────────────────────────────────────
-    rev = (
-        repo.latest_revision(campaign.campaign_id)
-        if hasattr(repo, "latest_revision")
-        else None
-    )
-
     col_push, col_now, col_force = st.columns([1.2, 1, 1.2])
 
     with col_push:
@@ -382,7 +478,7 @@ def render() -> None:
                 res = activate_and_push_campaign(
                     repo,
                     settings,
-                    campaign.campaign_id,
+                    active_campaign_id,
                     rev.revision_id if rev else 1,
                 )
                 if res.get("ok"):
@@ -426,42 +522,41 @@ def render() -> None:
                 force_res = force_publish_all_today(
                     repo,
                     settings,
-                    campaign.campaign_id,
+                    active_campaign_id,
                     rev.revision_id if rev else 1,
                 )
                 pub = force_res.get("published", 0)
                 if pub > 0:
                     st.success(f"🎉 Successfully published {pub} post(s) to Facebook!")
                 else:
-                    st.info(f"Worker tick completed. Claimed: {force_res.get('claimed', 0)}, Published: {pub}. Check table below.")
+                    st.info(
+                        f"Worker tick completed. Claimed: {force_res.get('claimed', 0)}, "
+                        f"Published: {pub}. Check table below."
+                    )
             st.rerun()
 
     # ── Daily Post Tracker (Indications & Schedule) ───────────────────
     st.markdown("---")
-    st.markdown("### 📅 Daily Schedule & Post Tracker")
+    st.markdown(f"### 📅 Daily Schedule & Post Tracker · `{active_campaign_id}`")
     st.caption("Here is where you check in everyday to see exactly which posts are published, scheduled, or need attention.")
 
     if jobs:
-        # Sort jobs by scheduled_at ascending
         sorted_jobs = sorted(jobs, key=lambda j: j.scheduled_at or "")
 
-        # Find the next upcoming job
         next_job = next(
             (j for j in sorted_jobs if j.status in {JobStatus.DRAFT, JobStatus.QUEUED, JobStatus.APPROVED}),
             None,
         )
 
-        # Highlight box for today / next action
         if failed_count > 0:
-            st.error(f"⚠️ **Attention Needed:** {failed_count} post(s) failed. Check the table below for details.")
+            st.error(f"⚠️ **Attention Needed:** {failed_count} post(s) failed in this pipeline. Check the table below for details.")
         elif next_job:
             st.info(
                 f"⏳ **Next Post in Line:** `{next_job.post_id}` scheduled for **{next_job.scheduled_at}** to **{conn.page_name if conn else 'Facebook'}**"
             )
         elif published_count > 0 and published_count == len(sorted_jobs):
-            st.success("🎉 **All scheduled posts in this campaign have been published!**")
+            st.success("🎉 **All scheduled posts in this pipeline have been published!**")
 
-        # Visual Table of all posts
         table_rows = []
         for j in sorted_jobs:
             if j.status == JobStatus.PUBLISHED:
@@ -484,7 +579,7 @@ def render() -> None:
 
         st.dataframe(table_rows, use_container_width=True)
     else:
-        st.info("No posts queued yet. Complete Step 1 and Step 2 above to load your campaign.")
+        st.info(f"No posts queued yet for '{active_campaign_id}'. Upload CSV + ZIP above to start this pipeline.")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from advertfloz.domain.enums import JobStatus, Platform
 from advertfloz.infrastructure.security.crypto import TokenCipher
 from advertfloz.infrastructure.worker_client import sync_meta_pages, sync_remote_connections
 from advertfloz.ui.components.status import chip
+from advertfloz.ui.components.tutorial import render_tutorial_callout
 from advertfloz.ui.pages import _oauth
 from advertfloz.ui.runtime import get_repo, get_settings
 
@@ -34,6 +35,7 @@ def render() -> None:
             sync_meta_pages(repo, settings)
 
     st.markdown('<div class="afz-page-title">Facebook Page</div>', unsafe_allow_html=True)
+    render_tutorial_callout("Facebook Page")
 
     conn = repo.get_connection(platform)
     if conn and conn.page_name:

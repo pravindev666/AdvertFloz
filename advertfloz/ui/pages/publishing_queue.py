@@ -6,7 +6,8 @@ import streamlit as st
 from advertfloz.domain.enums import JobStatus, Platform
 from advertfloz.domain.idempotency import job_key
 from advertfloz.infrastructure.persistence.local_sqlite import Repository
-from advertfloz.ui.runtime import get_repo
+from advertfloz.ui.components.tutorial import render_tutorial_callout
+from advertfloz.ui.runtime import get_repo, get_settings
 
 
 def _metrics(repo: Repository) -> dict:
@@ -16,6 +17,7 @@ def _metrics(repo: Repository) -> dict:
 def render() -> None:
     repo = get_repo()
     st.markdown('<div class="afz-page-title">Publishing Queue</div>', unsafe_allow_html=True)
+    render_tutorial_callout("Publishing Queue")
 
     counts = _metrics(repo)
     if not counts:

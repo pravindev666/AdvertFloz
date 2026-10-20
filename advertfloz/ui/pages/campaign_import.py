@@ -14,6 +14,7 @@ from advertfloz.application.services.contact_sheet import (
     tile_metadata,
 )
 from advertfloz.infrastructure.persistence.local_sqlite import Repository
+from advertfloz.ui.components.tutorial import render_tutorial_callout
 from advertfloz.ui.runtime import get_repo, get_settings
 
 
@@ -74,6 +75,7 @@ def render() -> None:
     settings = get_settings()
     repo: Repository = get_repo()
     st.markdown('<div class="afz-page-title">Campaign Import</div>', unsafe_allow_html=True)
+    render_tutorial_callout("Campaign Import")
 
     limits = ImportLimits(
         max_image_bytes=settings.max_image_bytes,

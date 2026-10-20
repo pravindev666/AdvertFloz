@@ -281,25 +281,53 @@ def activate_and_push_campaign(
 
 
 def fetch_worker_jobs(repo: Repository, settings: Settings) -> list[dict[str, Any]]:
-    """Fetch live job statuses from Cloudflare D1 and update local SQLite repository."""
+    """Fetch live job statuses from Cloudflare D1 and update/restore local SQLite repository."""
     if not settings.worker_configured:
         return []
     data = call_worker(settings, "/api/jobs")
     if not data or "jobs" not in data:
         return []
     for r in data["jobs"]:
-        job_id = r.get("job_id")
-        status = r.get("status")
-        remote_id = r.get("remote_post_id")
-        permalink = r.get("permalink")
-        if job_id and status:
-            try:
-                repo.conn.execute(
-                    "UPDATE platform_jobs SET status=?, remote_post_id=?, permalink=? WHERE job_id=?",
-                    (status, remote_id or "", permalink or "", job_id),
-                )
-            except Exception:
-                pass
+        camp_id = str(r.get("campaign_id") or "campaign-1")
+        rev_id = int(r.get("revision_id") or 1)
+        post_id = str(r.get("post_id") or "P001")
+        platform_str = str(r.get("platform") or "facebook")
+        status = str(r.get("status") or "QUEUED")
+        remote_id = str(r.get("remote_post_id") or "")
+        permalink = str(r.get("permalink") or "")
+        sched = str(r.get("scheduled_at") or "")
+        due = str(r.get("due_at_utc") or "")
+        idem = str(r.get("idempotency_key") or f"{camp_id}:{rev_id}:{post_id}:{platform_str}")
+        created = str(r.get("created_at") or "")
+        updated = str(r.get("updated_at") or "")
+
+        # 1. Restore campaign if missing locally
+        try:
+            repo.conn.execute(
+                "INSERT OR IGNORE INTO campaigns (campaign_id, name, created_at, default_timezone, start_date, end_date, schema_version) VALUES (?, ?, ?, 'Asia/Kolkata', '', '', '1.7')",
+                (camp_id, camp_id, created),
+            )
+        except Exception:
+            pass
+
+        # 2. Upsert job into local database
+        try:
+            repo.conn.execute(
+                """INSERT INTO platform_jobs (campaign_id, revision_id, post_id, platform, status, scheduled_at, due_at_utc, idempotency_key, remote_post_id, permalink, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(campaign_id, revision_id, post_id, platform) DO UPDATE SET
+                       status=excluded.status,
+                       remote_post_id=excluded.remote_post_id,
+                       permalink=excluded.permalink,
+                       scheduled_at=excluded.scheduled_at,
+                       due_at_utc=excluded.due_at_utc,
+                       updated_at=excluded.updated_at
+                """,
+                (camp_id, rev_id, post_id, platform_str, status, sched, due, idem, remote_id, permalink, created, updated),
+            )
+        except Exception:
+            pass
+
     try:
         repo.conn.commit()
     except Exception:

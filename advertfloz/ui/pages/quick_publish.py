@@ -94,9 +94,11 @@ def render() -> None:
         "Switch between pipelines, schedule overlapping daily posts, and track live status."
     )
 
-    # ═══════════════════════════════════════════════════════════════════
-    #  PIPELINE / CAMPAIGN SWITCHER & MANAGER
-    # ═══════════════════════════════════════════════════════════════════
+    # Ensure live pipelines from Cloudflare D1 are synced if Streamlit reboots/sleeps
+    if settings.worker_configured and not st.session_state.get("qp_jobs_synced"):
+        fetch_worker_jobs(repo, settings)
+        st.session_state["qp_jobs_synced"] = True
+
     campaigns = repo.list_campaigns()
 
     # Track currently selected pipeline ID

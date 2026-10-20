@@ -70,5 +70,9 @@ def publish_test_post(client: GraphClient, page_id: str, page_token: str, messag
 
 def publish_photo(client: GraphClient, page_id: str, page_token: str, image_url: str, caption: str) -> PublishResult:
     """Publish a single-image feed post."""
-    resp = client.post(f"{page_id}/photos", {"url": image_url, "caption": caption, "published": "true"}, page_token)
+    resp = client.post(
+        f"{page_id}/photos",
+        {"url": image_url, "message": caption, "caption": caption, "published": "true"},
+        page_token,
+    )
     return PublishResult.from_response(resp, id_keys=("post_id", "id"))

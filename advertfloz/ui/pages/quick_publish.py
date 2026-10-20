@@ -3,11 +3,9 @@
 Supports multiple independent campaign pipelines (e.g. MusikFlo Campaign 1 & 2,
 Rashinos Campaign 1 & 2) with overlapping schedules and dedicated target pages.
 """
-# trunk-ignore-all(ruff/E501)
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -458,55 +456,40 @@ def render() -> None:
                     st.info("Synced connection state.")
             st.rerun()
 
-    # ══════════════════════════════════════════════════════════════════
-    #  STATUS DASHBOARD — Live Status, Sync, Publish
-    # ══════════════════════════════════════════════════════════════════
+    # ── Status metrics (Scoped to active_campaign_id) ─────────────────
     st.markdown("---")
 
-    # Auto-sync on first load
     if settings.worker_configured and not st.session_state.get("qp_jobs_synced"):
         fetch_worker_jobs(repo, settings)
         st.session_state["qp_jobs_synced"] = True
-        st.session_state["qp_last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     jobs = repo.list_jobs(campaign_id=active_campaign_id, platform=platform)
     draft_count = sum(
-        1 for j in jobs
-        if j.status in {JobStatus.DRAFT, JobStatus.APPROVED, JobStatus.READY_FOR_REVIEW, JobStatus.QUEUED}
+        1
+        for j in jobs
+        if j.status
+        in {
+            JobStatus.DRAFT,
+            JobStatus.APPROVED,
+            JobStatus.READY_FOR_REVIEW,
+            JobStatus.QUEUED,
+        }
     )
     published_count = sum(1 for j in jobs if j.status is JobStatus.PUBLISHED)
     failed_count = sum(
-        1 for j in jobs
-        if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}
+        1
+        for j in jobs
+        if j.status
+        in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}
     )
-    total_jobs = len(jobs)
 
-    # ── Metrics row ──────────────────────────────────────────────────
-    mc1, mc2, mc3, mc4 = st.columns(4)
-    mc1.metric("📊 Total", total_jobs)
-    mc2.metric("📤 Queued", draft_count)
-    mc3.metric("✅ Published", published_count)
-    mc4.metric("❌ Failed", failed_count)
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("📤 Queued", draft_count)
+    mc2.metric("✅ Published", published_count)
+    mc3.metric("❌ Failed", failed_count)
 
-    # ── Progress bar ─────────────────────────────────────────────────
-    if total_jobs > 0:
-        progress = published_count / total_jobs
-        bar_color = "green" if progress == 1.0 else ("red" if failed_count > 0 else "blue")
-        st.progress(progress, text=f"{published_count}/{total_jobs} posts delivered ({progress:.0%})")
-
-    # ── Action buttons ───────────────────────────────────────────────
-    col_sync, col_push, col_now, col_force = st.columns([1, 1.2, 1, 1.2])
-
-    with col_sync:
-        if st.button(
-            "🔄 Sync Status",
-            use_container_width=True,
-            help="Ping Cloudflare D1 to pull the latest publish status for every post in this pipeline",
-        ):
-            with st.spinner("Syncing live status from Cloudflare…"):
-                fetch_worker_jobs(repo, settings)
-                st.session_state["qp_last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-            st.rerun()
+    # ── Publish buttons ───────────────────────────────────────────────
+    col_push, col_now, col_force = st.columns([1.2, 1, 1.2])
 
     with col_push:
         if st.button(
@@ -534,9 +517,6 @@ def render() -> None:
                         f"Queued {res.get('jobs_queued')} jobs. "
                         f"Sync: {res.get('sync_response')}"
                     )
-                # Auto-sync after push
-                fetch_worker_jobs(repo, settings)
-                st.session_state["qp_last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
             st.rerun()
 
     with col_now:
@@ -548,7 +528,6 @@ def render() -> None:
             with st.spinner("Triggering Worker…"):
                 tick_res = trigger_worker_tick(settings)
                 fetch_worker_jobs(repo, settings)
-                st.session_state["qp_last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                 if tick_res and tick_res.get("ok"):
                     r = tick_res.get("result", {})
                     st.success(
@@ -561,7 +540,7 @@ def render() -> None:
 
     with col_force:
         if st.button(
-            "🧪 Publish ALL Today",
+            "🧪 Publish ALL Today (Test)",
             use_container_width=True,
             help="Override all scheduled dates to TODAY and publish all posts immediately to Facebook for testing",
         ):
@@ -575,7 +554,6 @@ def render() -> None:
                     rev.revision_id if rev else 1,
                 )
                 pub = force_res.get("published", 0)
-                st.session_state["qp_last_synced"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                 if pub > 0:
                     st.success(f"🎉 Successfully published {pub} post(s) to Facebook!")
                 else:
@@ -585,15 +563,10 @@ def render() -> None:
                     )
             st.rerun()
 
-    # ── Last synced indicator ────────────────────────────────────────
-    last_synced = st.session_state.get("qp_last_synced", "Never")
-    st.caption(f"🕐 Last synced: **{last_synced}**  ·  Click **🔄 Sync Status** to pull fresh data from Cloudflare.")
-
-    # ══════════════════════════════════════════════════════════════════
-    #  DAILY POST TRACKER TABLE
-    # ══════════════════════════════════════════════════════════════════
+    # ── Daily Post Tracker (Indications & Schedule) ───────────────────
     st.markdown("---")
-    st.markdown(f"### 📅 Post Tracker · `{active_campaign_id}`")
+    st.markdown(f"### 📅 Daily Schedule & Post Tracker · `{active_campaign_id}`")
+    st.caption("Here is where you check in everyday to see exactly which posts are published, scheduled, or need attention.")
 
     if jobs:
         sorted_jobs = sorted(jobs, key=lambda j: j.scheduled_at or "")
@@ -603,68 +576,36 @@ def render() -> None:
             None,
         )
 
-        # Status banner
-        if published_count > 0 and published_count == total_jobs:
-            st.success("🎉 **All posts in this pipeline have been published!**")
-        elif failed_count > 0:
-            st.error(f"⚠️ **{failed_count} post(s) failed.** Click 🔄 Sync Status to check if retries succeeded.")
+        if failed_count > 0:
+            st.error(f"⚠️ **Attention Needed:** {failed_count} post(s) failed in this pipeline. Check the table below for details.")
         elif next_job:
             st.info(
-                f"⏳ **Next up:** `{next_job.post_id}` scheduled for **{next_job.scheduled_at}** → **{conn.page_name if conn else 'Facebook'}**"
+                f"⏳ **Next Post in Line:** `{next_job.post_id}` scheduled for **{next_job.scheduled_at}** to **{conn.page_name if conn else 'Facebook'}**"
             )
+        elif published_count > 0 and published_count == len(sorted_jobs):
+            st.success("🎉 **All scheduled posts in this pipeline have been published!**")
 
-        # Build rich status table
         table_rows = []
         for j in sorted_jobs:
             if j.status == JobStatus.PUBLISHED:
-                status_display = "✅ Published"
+                status_icon = "🟢 Published"
             elif j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}:
-                status_display = "❌ Failed"
+                status_icon = "🔴 Failed"
             elif j.status == JobStatus.QUEUED:
-                status_display = "⏳ Queued"
-            elif j.status == JobStatus.DRAFT:
-                status_display = "📝 Draft"
+                status_icon = "⏳ Queued (Auto-Publishing)"
             else:
-                status_display = f"⚪ {j.status.value}"
-
-            # Build FB Post ID column — show clickable link if published
-            fb_id = j.remote_post_id or ""
-            if fb_id and j.permalink:
-                fb_display = j.permalink
-            elif fb_id:
-                fb_display = fb_id
-            else:
-                fb_display = "—"
-
-            error_display = "—"
-            if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}:
-                err_class = j.last_error_class.value if j.last_error_class else "unknown"
-                error_display = f"{err_class} (attempt #{j.attempt_count})"
+                status_icon = f"⚪ {j.status.value}"
 
             row_data = {
                 "Post": j.post_id,
-                "Status": status_display,
-                "Scheduled": j.scheduled_at or "Immediate",
-                "FB Post / Link": fb_display,
-                "Attempts": j.attempt_count,
-                "Error": error_display,
-                "Updated": j.updated_at[:19] if j.updated_at else "—",
+                "Status": status_icon,
+                "Scheduled Time": j.scheduled_at or "Immediate",
+                "FB Post ID": j.remote_post_id or "—",
+                "Last Error": (j.last_error_class.value if j.last_error_class else "None") if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT} else "—",
             }
             table_rows.append(row_data)
 
-        st.dataframe(table_rows, use_container_width=True, hide_index=True)
-
-        # Expandable detail for failed posts
-        failed_jobs = [j for j in sorted_jobs if j.status in {JobStatus.FAILED_RETRYABLE, JobStatus.FAILED_PERMANENT}]
-        if failed_jobs:
-            with st.expander(f"🔍 Failed Post Details ({len(failed_jobs)})", expanded=False):
-                for fj in failed_jobs:
-                    st.markdown(
-                        f"**{fj.post_id}** — `{fj.last_error_class.value if fj.last_error_class else 'unknown'}` "
-                        f"| Stage: `{fj.last_stage or 'n/a'}` "
-                        f"| Attempts: {fj.attempt_count} "
-                        f"| Next retry: {fj.next_retry_at or 'none'}"
-                    )
+        st.dataframe(table_rows, use_container_width=True)
     else:
         st.info(f"No posts queued yet for '{active_campaign_id}'. Upload CSV + ZIP above to start this pipeline.")
 

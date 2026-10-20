@@ -89,7 +89,13 @@ export async function publishFacebookPhoto(env: Env, job: JobLike, token: string
   if (!pageId || !mediaUrl) {
     return { ok: false, remoteId: "", permalink: "", errorClass: "auth", summary: "missing page target or media URL" };
   }
-  return call(env, "POST", `${pageId}/photos`, token, { url: mediaUrl, caption, published: "true" });
+  // Meta Graph API requires 'message' for the text to appear in the Facebook Timeline feed stream.
+  return call(env, "POST", `${pageId}/photos`, token, {
+    url: mediaUrl,
+    message: caption,
+    caption: caption,
+    published: "true",
+  });
 }
 
 export async function createContainer(env: Env, job: JobLike, token: string): Promise<Outcome & { containerId: string }> {

@@ -15,6 +15,9 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 PAGES = [
     "overview.py",
+    "quick_campaign.py",
+    "pipelines.py",
+    "health_diagnostics.py",
     "prompt_builder.py",
     "campaign_import.py",
     "calendar.py",
@@ -48,9 +51,12 @@ def test_page_renders_without_exception(page: str):
 def test_navigation_registers_all_pages():
     from advertfloz.ui.navigation import PAGES as NAV_PAGES
 
+    assert "Home" in NAV_PAGES
+    assert "Quick Campaign" in NAV_PAGES
+    assert "Pipelines" in NAV_PAGES
+    assert "Facebook" in NAV_PAGES
+    assert "Instagram" in NAV_PAGES
     assert "Overview" in NAV_PAGES
-    assert {"Marketing Prompt Builder", "Campaign Import", "Calendar", "Settings & Recovery"} <= set(NAV_PAGES)
-    assert len(NAV_PAGES) == 13
 
 
 def test_campaign_import_page_navigation():

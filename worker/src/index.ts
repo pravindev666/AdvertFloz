@@ -25,6 +25,24 @@ export default {
     const path = url.pathname;
 
     if (path === "/health") return json({ status: "ok", service: "advertfloz-worker" });
+    if (path === "/privacy") {
+      return new Response(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Privacy Policy - Advertfloz</title><style>body{font-family:sans-serif;max-width:700px;margin:40px auto;line-height:1.6;padding:0 20px;color:#222;}</style></head><body><h1>Privacy Policy</h1><p><strong>Last Updated: October 2026</strong></p><p>Advertfloz is a social media campaign management tool. This Privacy Policy describes how we handle information in connection with our Meta (Facebook and Instagram) integrations.</p><h2>Data We Collect</h2><p>We only access and store the minimum necessary tokens and IDs to publish your scheduled posts and media to your designated Facebook Pages and Instagram accounts.</p><h2>How We Use Data</h2><p>Data is used exclusively to schedule, validate, and publish posts that you explicitly create and approve. We do not sell, rent, or share your data with any third parties.</p><h2>Data Deletion</h2><p>You can request deletion of all your stored data at any time by emailing <code>pravindev666@gmail.com</code>.</p></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }
+    if (path === "/terms") {
+      return new Response(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Terms of Service - Advertfloz</title><style>body{font-family:sans-serif;max-width:700px;margin:40px auto;line-height:1.6;padding:0 20px;color:#222;}</style></head><body><h1>Terms of Service</h1><p>By using Advertfloz, you authorize the application to manage and publish scheduled content to your connected Facebook and Instagram accounts in accordance with Meta Platform Terms.</p></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }
+    if (path === "/data-deletion") {
+      return new Response(
+        `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Data Deletion Instructions - Advertfloz</title><style>body{font-family:sans-serif;max-width:700px;margin:40px auto;line-height:1.6;padding:0 20px;color:#222;}</style></head><body><h1>User Data Deletion Instructions</h1><p>Advertfloz does not store personal user profiles. If you wish to delete all credentials and post data associated with your Facebook Page, please email <strong>pravindev666@gmail.com</strong> with your Page ID or disconnect your account directly from your Facebook Business Settings. All tokens and cached jobs will be removed within 24 hours.</p></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }
     if (path === "/oauth/meta/start" || path === "/auth/meta/start") {
       const provider = url.searchParams.get("provider") ?? "facebook";
       const { createOAuthState } = await import("./auth/oauth_callback");

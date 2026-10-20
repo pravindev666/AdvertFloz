@@ -213,3 +213,69 @@ def sync_campaign_to_worker(
     })
     return call_worker(settings, "/api/campaigns/sync", method="POST", body=payload)
 
+
+def trigger_worker_tick(settings: Settings) -> dict[str, Any] | None:
+    """Trigger a manual execution of the worker tick to publish due posts immediately."""
+    return call_worker(settings, "/api/scheduler/tick", method="POST", body="{}")
+
+
+def activate_and_push_campaign(
+    repo: Repository,
+    settings: Settings,
+    campaign_id: str,
+    revision_id: int,
+    media_dir: Path | str = "data/media",
+) -> dict[str, Any]:
+    """Activate all draft jobs, upload local media to R2, and sync campaign to Cloudflare D1."""
+    from pathlib import Path
+    from advertfloz.domain.enums import JobStatus, ProductionState
+
+    campaign = repo.get_campaign(campaign_id)
+    revision = repo.latest_revision(campaign_id) if hasattr(repo, "latest_revision") else None
+    posts = repo.list_posts(campaign_id, revision_id)
+    assets = repo.list_assets()
+
+    # 1. Upload local images to Cloudflare R2
+    uploaded_images = 0
+    media_path = Path(media_dir)
+    for asset in assets:
+        candidates = [
+            media_path / f"{asset.image_id}.jpg",
+            media_path / asset.filename,
+            Path(asset.local_path) if asset.local_path else None,
+        ]
+        img_file = next((c for c in candidates if c and c.exists()), None)
+        if img_file and img_file.is_file():
+            try:
+                data = img_file.read_bytes()
+                key = upload_media_to_worker(repo, settings, asset.image_id, f"{asset.image_id}.jpg", data, sha256=asset.sha256)
+                if key:
+                    uploaded_images += 1
+            except Exception:
+                pass
+        repo.update_production_state(asset.image_id, ProductionState.APPROVED, approved=True)
+
+    # 2. Enable posts and queue all draft jobs
+    for p in posts:
+        repo.set_post_enabled(campaign_id, revision_id, p.post_id, True)
+
+    jobs = repo.list_jobs(campaign_id=campaign_id, revision_id=revision_id)
+    queued_count = 0
+    for j in jobs:
+        if j.status in {JobStatus.DRAFT, JobStatus.APPROVED, JobStatus.READY_FOR_REVIEW}:
+            repo.transition_job(j.job_id, JobStatus.QUEUED, clear_lease=True)
+            queued_count += 1
+
+    # 3. Push to Cloudflare Worker & D1
+    updated_jobs = repo.list_jobs(campaign_id=campaign_id, revision_id=revision_id)
+    sync_res = sync_campaign_to_worker(settings, campaign, revision, posts, updated_jobs)
+
+    return {
+        "ok": bool(sync_res and sync_res.get("ok")),
+        "campaign_id": campaign_id,
+        "images_uploaded": uploaded_images,
+        "jobs_queued": queued_count,
+        "total_jobs": len(updated_jobs),
+        "sync_response": sync_res,
+    }
+

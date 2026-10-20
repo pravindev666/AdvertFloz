@@ -84,6 +84,14 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       reason: "GO: active Cloudflare D1 and R2 verified",
     });
   }
+  if (path === "/api/scheduler/tick" && request.method === "POST") {
+    try {
+      const result = await runTick(env, { limit: 5, leaseSeconds: 300, now: new Date(), owner: "manual" });
+      return json({ ok: true, result });
+    } catch (err: any) {
+      return json({ error: String(err?.message || err) }, 500);
+    }
+  }
   if (path === "/api/media/upload" && request.method === "POST") {
     try {
       const payload: any = await request.json();

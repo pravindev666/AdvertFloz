@@ -22,6 +22,42 @@ def render() -> None:
         st.info("No jobs yet. Import and activate a campaign to create platform jobs.")
         return
 
+    settings = get_settings()
+    campaigns = repo.list_campaigns()
+    draft_count = counts.get("DRAFT", 0)
+    fb_conn = repo.get_connection(Platform.FACEBOOK)
+    target_page_name = fb_conn.page_name if (fb_conn and fb_conn.page_name) else "No target page selected"
+
+    st.markdown('<div class="afz-section-title">🚀 Push Campaign & Schedule to Facebook</div>', unsafe_allow_html=True)
+    st.caption(f"Active Target Page: **{target_page_name}**")
+
+    c_push1, c_push2 = st.columns([2, 1])
+    if campaigns and draft_count > 0:
+        latest_camp = campaigns[-1]
+        rev = repo.latest_revision(latest_camp.campaign_id)
+        if c_push1.button(f"Queue {draft_count} Posts & Push to Cloudflare Worker", type="primary", use_container_width=True):
+            with st.spinner("Uploading images to Cloudflare R2 & syncing schedule to D1..."):
+                from advertfloz.infrastructure.worker_client import activate_and_push_campaign
+                res = activate_and_push_campaign(repo, settings, latest_camp.campaign_id, rev.revision_id if rev else 1)
+                if res.get("ok"):
+                    st.success(f"🎉 Successfully queued {res.get('jobs_queued')} jobs & uploaded {res.get('images_uploaded')} images! Scheduled to publish to {target_page_name}.")
+                else:
+                    st.info(f"Queued {res.get('jobs_queued')} jobs. Sync result: {res.get('sync_response')}")
+            st.rerun()
+    else:
+        c_push1.info(f"All {sum(counts.values())} jobs are already queued or published.")
+
+    if c_push2.button("⚡ Publish Due Post Now", help="Ask Cloudflare Worker to immediately publish any post whose time has arrived", use_container_width=True):
+        with st.spinner("Calling Cloudflare Worker tick..."):
+            from advertfloz.infrastructure.worker_client import trigger_worker_tick
+            tick_res = trigger_worker_tick(settings)
+            if tick_res and tick_res.get("ok"):
+                r = tick_res.get("result", {})
+                st.success(f"Worker tick complete! Published: {r.get('published', 0)}, Claimed: {r.get('claimed', 0)}")
+            else:
+                st.info(f"Worker response: {tick_res}")
+        st.rerun()
+
     cols = st.columns(4)
     for index, key in enumerate(
         ["QUEUED", "PUBLISHED", "FAILED_RETRYABLE", "UNKNOWN_OUTCOME"]

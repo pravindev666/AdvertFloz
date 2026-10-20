@@ -91,16 +91,12 @@ def render() -> None:
             st.success(message)
             st.rerun()
     else:
-        if col1.button("Connect Facebook"):
-            url, message = _oauth.start_oauth(repo, settings, platform)
-            if url:
-                st.session_state["fb_authorize_url"] = url
-                st.info(message)
-            else:
-                st.error(message)
+        oauth_start_url = f"{settings.worker_base_url.rstrip('/')}/auth/meta/start"
+        btn_label = "Reconnect Facebook" if (conn and conn.page_name) else "Connect Facebook"
+        col1.link_button(btn_label, oauth_start_url)
 
-        if col2.button("Sync / Fetch Pages", help="Fetch your Facebook Pages (like MusikFlo) from Meta via Worker"):
-            with st.spinner("Fetching Facebook Pages..."):
+        if col2.button("Sync / Fetch Pages", help="Fetch your Facebook Pages (like MusikFlo, Rashinos) from Meta"):
+            with st.spinner("Fetching Facebook Pages from Meta..."):
                 res = sync_meta_pages(repo, settings)
                 if res and res.get("pages"):
                     st.session_state["available_fb_pages"] = res["pages"]
@@ -110,9 +106,6 @@ def render() -> None:
                     sync_remote_connections(repo, settings)
                     st.info("Synchronized connection state.")
             st.rerun()
-
-        if st.session_state.get("fb_authorize_url"):
-            st.link_button("Open Meta authorization", st.session_state["fb_authorize_url"])
 
     if col3.button("Test connection"):
         repo.audit("operator", "test.connection", platform.value, "non-publishing test requested")

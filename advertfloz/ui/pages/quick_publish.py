@@ -139,7 +139,7 @@ def render() -> None:
     with c_pipe2:
         st.write("")
         st.write("")
-        if st.button("➕ New Pipeline", use_container_width=True):
+        if st.button("➕ New Pipeline", width="stretch"):
             st.session_state["qp_show_new_form"] = not st.session_state.get("qp_show_new_form", False)
 
     with c_pipe3:
@@ -149,7 +149,7 @@ def render() -> None:
             if st.button(
                 "🗑️ Delete Pipeline",
                 type="secondary",
-                use_container_width=True,
+                width="stretch",
                 help=f"Permanently remove pipeline '{current_campaign_id}' and all its posts",
             ):
                 with st.spinner(f"Deleting pipeline '{current_campaign_id}'…"):
@@ -185,8 +185,8 @@ def render() -> None:
                 placeholder="e.g. rashinos-campaign-1",
             )
             f_col1, f_col2 = st.columns(2)
-            c_submit = f_col1.form_submit_button("Create Pipeline", type="primary", use_container_width=True)
-            c_cancel = f_col2.form_submit_button("Cancel", use_container_width=True)
+            c_submit = f_col1.form_submit_button("Create Pipeline", type="primary", width="stretch")
+            c_cancel = f_col2.form_submit_button("Cancel", width="stretch")
 
             if c_submit and new_id:
                 st.session_state["qp_selected_campaign_id"] = new_id
@@ -275,7 +275,7 @@ def render() -> None:
             st.error(f"❌ {len(blocking)} error(s) — fix your CSV / ZIP and re-upload")
             st.dataframe(
                 [{"row": i.row, "field": i.field, "message": i.message} for i in blocking],
-                use_container_width=True,
+                width="stretch",
             )
         elif result.ok and result.mapping_complete():
             counts = result.platform_counts()
@@ -286,7 +286,7 @@ def render() -> None:
                 f"{counts.get('instagram', 0)} IG jobs"
             )
             if st.button(
-                f"📥 Import into '{active_campaign_id}'", type="primary", use_container_width=True
+                f"📥 Import into '{active_campaign_id}'", type="primary", width="stretch"
             ):
                 with st.spinner("Committing campaign…"):
                     commit_import(repo, result, campaign_name=active_campaign_id)
@@ -333,7 +333,7 @@ def render() -> None:
             if st.button(
                 "✅ Approve All Images",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 for a in assets:
                     if not a.approved:
@@ -495,7 +495,7 @@ def render() -> None:
         if st.button(
             "🚀 Push to Facebook",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             help="Upload images to R2, queue all jobs, and sync schedule",
         ):
             with st.spinner("Uploading images & syncing schedule…"):
@@ -522,7 +522,7 @@ def render() -> None:
     with col_now:
         if st.button(
             "⚡ Publish Due Now",
-            use_container_width=True,
+            width="stretch",
             help="Immediately publish any posts whose scheduled time has arrived",
         ):
             with st.spinner("Triggering Worker…"):
@@ -541,7 +541,7 @@ def render() -> None:
     with col_force:
         if st.button(
             "🧪 Publish ALL Today (Test)",
-            use_container_width=True,
+            width="stretch",
             help="Override all scheduled dates to TODAY and publish all posts immediately to Facebook for testing",
         ):
             with st.spinner("Setting all posts to Due Now and publishing to Facebook…"):
@@ -605,7 +605,7 @@ def render() -> None:
             }
             table_rows.append(row_data)
 
-        st.dataframe(table_rows, use_container_width=True)
+        st.dataframe(table_rows, width="stretch")
     else:
         st.info(f"No posts queued yet for '{active_campaign_id}'. Upload CSV + ZIP above to start this pipeline.")
 

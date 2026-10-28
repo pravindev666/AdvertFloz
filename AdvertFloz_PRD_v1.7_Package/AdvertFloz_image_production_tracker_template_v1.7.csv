@@ -1,0 +1,3 @@
+﻿post_id,image_id,prompt_status,generated_status,overlay_status,approved,final_filename,zip_part,uploaded,sha256,remote_synced,ready_to_activate,reviewer_notes
+P001,1,prompt_ready,not_generated,not_started,false,1.jpg,advertfloz_images_001_030.zip,false,,false,false,Example only
+P002,2,prompt_ready,not_generated,not_started,false,2.jpg,advertfloz_images_001_030.zip,false,,false,false,Example only

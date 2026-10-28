@@ -73,8 +73,9 @@ def commit_import(
     for post in result.posts:
         repo.upsert_post(post)
         asset = repo.get_asset(post.image_id)
-        if post.image_id in asset_ids_in_zip and asset is None:
+        if post.image_id in asset_ids_in_zip:
             info = result.assets[post.image_id]
+            is_same = asset is not None and asset.sha256 == info.sha256
             repo.upsert_asset(
                 MediaAsset(
                     image_id=post.image_id,
@@ -83,9 +84,9 @@ def commit_import(
                     byte_size=info.byte_size,
                     width=info.width,
                     height=info.height,
-                    production_state=ProductionState.UPLOADED,
-                    sync_state=SyncState.NOT_SYNCED,
-                    approved=False,
+                    production_state=ProductionState.UPLOADED if not is_same else asset.production_state,
+                    sync_state=SyncState.NOT_SYNCED if not is_same else asset.sync_state,
+                    approved=asset.approved if is_same else False,
                     zip_part=info.filename,
                 )
             )

@@ -24,7 +24,7 @@ def render() -> None:
 
     col_btn, col_info = st.columns([1.5, 4])
     with col_btn:
-        run_check = st.button("🔄 Check Integrations Now", type="primary", use_container_width=True)
+        run_check = st.button("🔄 Check Integrations Now", type="primary", width="stretch")
 
     if run_check or "diag_results" not in st.session_state:
         with st.spinner("Executing real integration diagnostic cycles…"):

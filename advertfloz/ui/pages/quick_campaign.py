@@ -30,11 +30,16 @@ from advertfloz.ui.runtime import get_repo, get_settings
 
 
 def _extract_zips_to_media(zips_data: list[tuple[str, bytes]], target_dir: Path | str = "data/media") -> int:
-    """Extract JPEG/PNG image files from zip bytes into media directory."""
+    """Extract JPEG/PNG image files from zip bytes into media directory.
+
+    Handles partial/corrupt ZIPs gracefully by extracting as many valid images
+    as possible and logging failures instead of silently swallowing them.
+    """
     dest = Path(target_dir)
     dest.mkdir(parents=True, exist_ok=True)
     count = 0
-    for _, zbytes in zips_data:
+    errors: list[str] = []
+    for zname, zbytes in zips_data:
         try:
             with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zf:
                 for member in zf.infolist():
@@ -42,8 +47,13 @@ def _extract_zips_to_media(zips_data: list[tuple[str, bytes]], target_dir: Path 
                         fn = Path(member.filename).name
                         (dest / fn).write_bytes(zf.read(member.filename))
                         count += 1
-        except Exception:
-            pass
+        except zipfile.BadZipFile:
+            errors.append(f"'{zname}' is corrupt or incomplete (upload may have been interrupted)")
+        except Exception as exc:
+            errors.append(f"'{zname}': {exc}")
+    if errors:
+        import logging
+        logging.getLogger("advertfloz.upload").warning("ZIP extraction issues: %s", "; ".join(errors))
     return count
 
 
@@ -154,7 +164,7 @@ def render() -> None:
         st.markdown("---")
         _, next_c = st.columns([4, 1])
         with next_c:
-            if st.button("Next: Upload Content ➡️", type="primary", use_container_width=True, disabled=not selected_platforms):
+            if st.button("Next: Upload Content ➡️", type="primary", width="stretch", disabled=not selected_platforms):
                 st.session_state["qc_platforms"] = selected_platforms
                 st.session_state["qc_campaign_id"] = target_id
                 st.session_state["qc_step"] = 2
@@ -268,7 +278,7 @@ def render() -> None:
         with next_c:
             curr_posts = repo.list_posts(active_id, 1) if repo.get_campaign(active_id) else []
             has_posts = len(curr_posts) > 0 or st.session_state.get("qc_assembled_res") is not None
-            if st.button("Next: Review & Previews ➡️", type="primary", use_container_width=True, disabled=not has_posts):
+            if st.button("Next: Review & Previews ➡️", type="primary", width="stretch", disabled=not has_posts):
                 # Ensure committed before advancing
                 stored_res = st.session_state.get("qc_assembled_res")
                 if stored_res and (not st.session_state.get("qc_committed") or len(curr_posts) == 0):
@@ -286,12 +296,21 @@ def render() -> None:
         rev = repo.latest_revision(active_id) if campaign else None
         posts = repo.list_posts(active_id, rev.revision_id if rev else 1) if campaign else []
         all_assets = repo.list_assets()
+        # Filter assets to only those belonging to THIS campaign's posts
+        # (consistent with Step 5 filtering logic)
         post_img_ids = {p.image_id for p in posts}
-        assets = [a for a in all_assets if a.image_id in post_img_ids] if posts else all_assets
+        assets = [a for a in all_assets if a.image_id in post_img_ids] if posts else []
         conn = repo.get_connection(Platform.FACEBOOK)
         brand_name = conn.page_name if (conn and conn.page_name) else "Official Brand Page"
 
         st.markdown("### Step 3 · Review, Approve & Platform Previews")
+
+        if not posts:
+            st.warning(
+                "⚠️ No posts found in database for this pipeline. "
+                "This can happen if the upload was interrupted. "
+                "Go back to **Step 2** and re-upload your CSV and ZIP files."
+            )
 
         # Approval status
         total_assets = len(assets)
@@ -299,13 +318,19 @@ def render() -> None:
 
         col_app1, col_app2 = st.columns([3, 2])
         with col_app1:
-            st.markdown(
-                f"Asset Approval Status: {chip(f'{approved_count}/{total_assets} Approved', 'success' if approved_count == total_assets else 'warning')}",
-                unsafe_allow_html=True,
-            )
+            if total_assets > 0:
+                st.markdown(
+                    f"Asset Approval Status: {chip(f'{approved_count}/{total_assets} Approved', 'success' if approved_count == total_assets else 'warning')}",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"Asset Approval Status: {chip('No assets loaded', 'warning')}",
+                    unsafe_allow_html=True,
+                )
         with col_app2:
             if approved_count < total_assets:
-                if st.button("✅ Approve All Images Now", type="primary", use_container_width=True):
+                if st.button("✅ Approve All Images Now", type="primary", width="stretch"):
                     for a in assets:
                         repo.update_production_state(a.image_id, ProductionState.APPROVED, approved=True)
                     st.success("All images approved.")
@@ -400,7 +425,7 @@ def render() -> None:
                 st.session_state["qc_step"] = 2
                 st.rerun()
         with next_c:
-            if st.button("Next: Target & Schedule ➡️", type="primary", use_container_width=True):
+            if st.button("Next: Target & Schedule ➡️", type="primary", width="stretch"):
                 st.session_state["qc_step"] = 4
                 st.rerun()
 
@@ -456,7 +481,7 @@ def render() -> None:
                 st.session_state["qc_step"] = 3
                 st.rerun()
         with next_c:
-            if st.button("Next: Preflight & Push ➡️", type="primary", use_container_width=True):
+            if st.button("Next: Preflight & Push ➡️", type="primary", width="stretch"):
                 st.session_state["qc_step"] = 5
                 st.rerun()
 
@@ -468,7 +493,22 @@ def render() -> None:
         campaign = repo.get_campaign(active_id)
         rev = repo.latest_revision(active_id) if campaign else None
         posts = repo.list_posts(active_id, rev.revision_id if rev else 1) if campaign else []
-        assets = repo.list_assets()
+
+        # Session state fallback: if DB posts missing but assembled in session, auto-commit
+        if not posts and st.session_state.get("qc_assembled_res"):
+            res = st.session_state["qc_assembled_res"]
+            try:
+                commit_import(repo, res, campaign_name=active_id)
+                st.session_state["qc_committed"] = True
+                campaign = repo.get_campaign(active_id)
+                rev = repo.latest_revision(active_id) if campaign else None
+                posts = repo.list_posts(active_id, rev.revision_id if rev else 1) if campaign else []
+            except Exception:
+                pass
+
+        all_assets = repo.list_assets()
+        post_img_ids = {p.image_id for p in posts}
+        campaign_assets = [a for a in all_assets if a.image_id in post_img_ids] if posts else []
         conn = repo.get_connection(Platform.FACEBOOK)
 
         st.markdown("### Step 5 · Preflight Validation & Explicit Push")
@@ -477,13 +517,35 @@ def render() -> None:
         chk1 = conn is not None and conn.page_id != ""
         chk2 = settings.worker_configured
         chk3 = len(posts) > 0
-        chk4 = all(a.approved for a in assets if a.image_id in {p.image_id for p in posts}) if posts else False
+        chk4 = chk3 and all(a.approved for a in campaign_assets) if campaign_assets else False
 
         v1, v2, v3, v4 = st.columns(4)
         v1.markdown(f"**Target Page**: {'✅ ' + conn.page_name if chk1 else '❌ Missing'}")
         v2.markdown(f"**Worker & R2**: {'✅ Connected' if chk2 else '❌ Not configured'}")
         v3.markdown(f"**Content Posts**: {'✅ ' + str(len(posts)) + ' posts' if chk3 else '❌ None'}")
         v4.markdown(f"**Images Approved**: {'✅ All approved' if chk4 else '⚠️ Pending'}")
+
+        # Inline helpers if posts are missing or images need approval
+        if not chk3:
+            st.error(
+                f"❌ Pipeline `{active_id}` has no posts saved in the database. "
+                "This usually happens if an upload was interrupted or the session reset. "
+                "Please go back to Step 2 to re-upload your CSV and ZIP."
+            )
+            if st.button("⬅️ Return to Step 2 to Re-upload", type="primary"):
+                st.session_state["qc_step"] = 2
+                st.rerun()
+        elif not chk4 and campaign_assets:
+            col_warn, col_fix = st.columns([3, 1])
+            with col_warn:
+                pending_num = sum(1 for a in campaign_assets if not a.approved)
+                st.warning(f"⚠️ {pending_num} image(s) for this pipeline are not yet approved.")
+            with col_fix:
+                if st.button("✅ Approve All Images Now", type="primary", width="stretch"):
+                    for a in campaign_assets:
+                        repo.update_production_state(a.image_id, ProductionState.APPROVED, approved=True)
+                    st.success("All images approved!")
+                    st.rerun()
 
         st.markdown("---")
 
@@ -496,7 +558,7 @@ def render() -> None:
 
         col_push, col_now, col_pipe = st.columns([1.5, 1.5, 1.2])
         with col_push:
-            if st.button("🚀 Push & Schedule to Cloudflare", type="primary", disabled=not all_ready, use_container_width=True, help="Schedules posts in Cloudflare D1 to be posted at their exact CSV times."):
+            if st.button("🚀 Push & Schedule to Cloudflare", type="primary", disabled=not all_ready, width="stretch", help="Schedules posts in Cloudflare D1 to be posted at their exact CSV times."):
                 with st.spinner("Pushing campaign, uploading media to R2, and syncing schedule with D1…"):
                     res = activate_and_push_campaign(
                         repo,
@@ -512,7 +574,7 @@ def render() -> None:
                     st.info(f"Queued {res.get('jobs_queued')} jobs. Sync status: {res.get('sync_response')}")
 
         with col_now:
-            if st.button("⚡ Publish Due Posts Right Now", disabled=not all_ready, use_container_width=True, help="Immediately triggers the worker to post any due posts right away."):
+            if st.button("⚡ Publish Due Posts Right Now", disabled=not all_ready, width="stretch", help="Immediately triggers the worker to post any due posts right away."):
                 with st.spinner("Dispatching due posts to Facebook/Instagram right now…"):
                     f_res = force_publish_all_today(
                         repo,
@@ -524,7 +586,7 @@ def render() -> None:
                 st.rerun()
 
         with col_pipe:
-            if st.button("👉 View in Pipelines", use_container_width=True):
+            if st.button("👉 View in Pipelines", width="stretch"):
                 st.session_state["selected_pipeline_id"] = active_id
                 st.switch_page("advertfloz/ui/pages/pipelines.py")
 

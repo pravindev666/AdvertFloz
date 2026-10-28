@@ -121,16 +121,16 @@ def render() -> None:
     # ═════════════════════════════════════════════════════════════════
     qa1, qa2, qa3, qa4 = st.columns([1.5, 1.5, 1.5, 1])
     with qa1:
-        if st.button("➕ Create Quick Campaign", type="primary", use_container_width=True):
+        if st.button("➕ Create Quick Campaign", type="primary", width="stretch"):
             st.switch_page("advertfloz/ui/pages/quick_campaign.py")
     with qa2:
-        if st.button("⚙️ View Pipelines", use_container_width=True):
+        if st.button("⚙️ View Pipelines", width="stretch"):
             st.switch_page("advertfloz/ui/pages/pipelines.py")
     with qa3:
-        if st.button("🛡️ Integration Diagnostics", use_container_width=True):
+        if st.button("🛡️ Integration Diagnostics", width="stretch"):
             st.switch_page("advertfloz/ui/pages/health_diagnostics.py")
     with qa4:
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄 Refresh", width="stretch"):
             fetch_worker_jobs(repo, settings)
             st.rerun()
 

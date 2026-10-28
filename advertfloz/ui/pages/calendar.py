@@ -186,7 +186,7 @@ def _render_instagram_grid(rows) -> None:
             with cols[idx]:
                 media = Path("data/media") / f"{post.image_id}.jpg"
                 if media.exists():
-                    st.image(str(media), use_container_width=True)
+                    st.image(str(media), width="stretch")
                 else:
                     # Placeholder for missing image
                     st.markdown(

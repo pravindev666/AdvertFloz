@@ -1,0 +1,17 @@
+# Taste — AdvertFloz operator / coding-agent preferences
+- Prefers the agent to fully implement and verify a runnable, tested, documented product — not deliver summaries, plans, wireframes, scaffolds, or a trimmed-down MVP/prototype. Confidence: 0.75
+- Wants work done in deliberate stages but driven through to the full in-scope product; phases are sequencing, not permission to stop early. Confidence: 0.6
+- Prefers clean separation of concerns — domain logic kept apart from UI code and provider adapters, using a maintainable monorepo layout. Confidence: 0.55
+- Requires brutally truthful reporting: never claim a test, cloud deployment, OAuth flow or publication was performed unless it actually was. Confidence: 0.8
+- Do not declare "all passed" without command output or report evidence; do not call something production-ready just because code compiles. Confidence: 0.8
+- Separates "implementation complete" from "live-provider acceptance pending", and reports external blockers explicitly instead of faking success. Confidence: 0.7
+- Run real checks (lint, type checks, tests, validators, migrations, build) and fix failures rather than hiding or skipping them. Confidence: 0.7
+- Strong security-first stance: never place secrets in source, CSV/Markdown/ZIP, browser storage, logs, exceptions, or backups. Confidence: 0.65
+- Use established authenticated encryption rather than home-grown crypto; keep the encryption key outside the database; fail closed when auth is not configured. Confidence: 0.6
+- Zero-cost bias: avoid automatic paid upgrades or paid fallbacks, and treat a "free" label as unproven until payment prerequisites and quota limits are actually verified. Confidence: 0.6
+- When reviewing a plan, expects the agent to update the existing plan file in place at the same path and address every comment explicitly (not produce a brand-new document or silently skip comments). Confidence: 0.65
+- Expects plan-mode discipline: while in plan mode, only revise the plan document — do not begin implementing until the plan is presented and approved. Confidence: 0.65
+- Expects a plan to be updated with a traceability table mapping each requirement → resolution → where it is recorded → evidence, rather than prose that only implies coverage. Confidence: 0.6
+- Wants architecture decisions formally recorded in an ADR (one entry per resolved requirement) with implementation-status docs updated to match. Confidence: 0.6
+- Dislikes invented mechanisms: solutions must use official, documented approaches, and assumptions about infrastructure reachability (e.g. localhost sidecars behind a hosted platform) must be verified and tested, not assumed. Confidence: 0.6
+- Insists acceptance criteria keep automated/mock evidence strictly separate from live acceptance, where only an actually executed live test may mark a capability as passed. Confidence: 0.65

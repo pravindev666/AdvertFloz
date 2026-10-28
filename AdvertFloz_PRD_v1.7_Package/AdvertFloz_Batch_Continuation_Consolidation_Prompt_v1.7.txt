@@ -1,0 +1,25 @@
+ADVERTFLOZ BATCH CONTINUATION AND CONSOLIDATION PROMPT v1.7
+
+Continue the current AdvertFloz campaign using the same repository evidence and full cumulative `continuity_ledger.md`. Do not restart, change IDs or change schemas. Determine the next missing fixed range:
+001–030, 031–060, 061–090, 091–120, 121–150, 151–180, 181–210, 211–240, 241–270, 271–300, 301–330, 331–360, 361–365.
+
+For range XXX_YYY, create exactly:
+- `365_day_prompt_library_PART_XXX_YYY.md`
+- `365_outcomes_driven_campaigns_PART_XXX_YYY.md`
+- `campaign_plan_PART_XXX_YYY.csv`
+- `image_prompts_PART_XXX_YYY.csv`
+- update the cumulative `continuity_ledger.md`
+- `batch_checklist_XXX_YYY.md`
+
+CSV headers must exactly match `AdvertFloz_External_AI_Output_Contract_v1.7.md`. Row count is YYY−XXX+1. IDs remain P001–P365; `image_id` equals ordinal; filename is `<image_id>.jpg`; `enabled=false`. Every prompt is standalone and complete. No placeholders, ellipses, “same as above” or missing sections.
+
+Compare against the full continuity ledger and record topics/hooks/compositions/palettes/audiences/CTAs/routes already used, duplicate-risk pairs and how each new post is meaningfully different. Do not guess if the next range is uncertain; report missing ranges.
+
+FINAL CONSOLIDATION (only when all 13 batches are present):
+1. Check all ranges and day headings are complete and in numeric order.
+2. Merge Markdown into `365_day_prompt_library.md` and `365_outcomes_driven_campaigns.md`.
+3. Merge CSVs into `campaign_plan.csv` and `image_prompts.csv` using exact headers and valid UTF-8/RFC4180 quoting.
+4. Create `campaign_manifest.json` with schema version 1.7, campaign metadata, exact row counts, expected IDs, file names and `{image_id}.jpg` mapping.
+5. Produce `campaign_validation.md`, `assumptions_and_questions.md`, `README_FIRST.md` and final ledger.
+6. Flag missing/duplicate IDs, schema drift, mismatched image IDs, dates, platform captions, unverified routes/claims and near duplicates. Do not claim validation passes with blockers.
+7. Deliver the package as downloadable files where supported. Do not claim JPEG assets were generated: the user creates images separately and uploads them to AdvertFloz as exact ZIP parts.

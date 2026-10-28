@@ -66,7 +66,7 @@ def render() -> None:
     with c_act1:
         st.write("")
         st.write("")
-        if st.button("🔄 Sync with Cloudflare", use_container_width=True, help="Fetch latest execution status from D1"):
+        if st.button("🔄 Sync with Cloudflare", width="stretch", help="Fetch latest execution status from D1"):
             with st.spinner("Syncing status from Cloudflare…"):
                 fetch_worker_jobs(repo, settings)
             st.success("Synced!")
@@ -75,7 +75,7 @@ def render() -> None:
     with c_act2:
         st.write("")
         st.write("")
-        if st.button("🗑️ Delete Pipeline", type="secondary", use_container_width=True):
+        if st.button("🗑️ Delete Pipeline", type="secondary", width="stretch"):
             with st.spinner(f"Removing pipeline '{current_id}'…"):
                 repo.delete_campaign(current_id)
                 delete_worker_campaign(settings, current_id)
@@ -127,14 +127,14 @@ def render() -> None:
     ctl0, ctl1, ctl2, ctl3 = st.columns([1.6, 1.2, 1.2, 1.2])
 
     with ctl0:
-        if st.button("🚀 Publish Entire Pipeline Now", type="primary", use_container_width=True, help="Force all remaining posts in this campaign to publish immediately"):
+        if st.button("🚀 Publish Entire Pipeline Now", type="primary", width="stretch", help="Force all remaining posts in this campaign to publish immediately"):
             with st.spinner("Dispatching and publishing all remaining posts right now…"):
                 res = force_publish_entire_pipeline(repo, settings, active_id)
             st.success(f"Dispatched! Published: {res.get('published', 0)}")
             st.rerun()
 
     with ctl1:
-        if st.button("⚡ Dispatch Due Tick", use_container_width=True, help="Trigger immediate delivery for any posts whose schedule has arrived"):
+        if st.button("⚡ Dispatch Due Tick", width="stretch", help="Trigger immediate delivery for any posts whose schedule has arrived"):
             with st.spinner("Dispatching worker tick…"):
                 trigger_worker_tick(settings)
                 fetch_worker_jobs(repo, settings)
@@ -143,7 +143,7 @@ def render() -> None:
 
     with ctl2:
         can_retry = failed > 0
-        if st.button("🔁 Retry Failed", disabled=not can_retry, use_container_width=True, help="Re-queue failed posts safely"):
+        if st.button("🔁 Retry Failed", disabled=not can_retry, width="stretch", help="Re-queue failed posts safely"):
             with st.spinner("Re-queueing failed posts…"):
                 retry_count = 0
                 for j in jobs:
@@ -156,14 +156,14 @@ def render() -> None:
 
     with ctl3:
         if paused > 0:
-            if st.button("▶️ Resume Pipeline", use_container_width=True):
+            if st.button("▶️ Resume Pipeline", width="stretch"):
                 for j in jobs:
                     if j.status is JobStatus.PAUSED:
                         repo.transition_job(j.job_id, JobStatus.QUEUED, clear_lease=True)
                 st.success("Pipeline resumed.")
                 st.rerun()
         else:
-            if st.button("⏸️ Emergency Pause", use_container_width=True, help="Temporarily pause all pending jobs in this pipeline"):
+            if st.button("⏸️ Emergency Pause", width="stretch", help="Temporarily pause all pending jobs in this pipeline"):
                 for j in jobs:
                     if j.status in {JobStatus.QUEUED, JobStatus.APPROVED}:
                         repo.transition_job(j.job_id, JobStatus.PAUSED, clear_lease=True)
@@ -216,7 +216,7 @@ def render() -> None:
                 "Remote Post ID": j.remote_post_id or "—",
                 "Last Error": (j.last_error_class.value if j.last_error_class else "—") if "FAIL" in status_val else "—",
             })
-        st.dataframe(table_rows, use_container_width=True)
+        st.dataframe(table_rows, width="stretch")
 
     # Expandable Technical Diagnostics
     with st.expander("🔍 Advanced Pipeline Diagnostics & Audit Log"):
@@ -233,7 +233,7 @@ def render() -> None:
                     st.markdown("**Recent Audit Trail**:")
                     st.dataframe(
                         [{"Actor": e.actor, "Action": e.action, "Target": e.target, "Time": e.at} for e in audit_events],
-                        use_container_width=True,
+                        width="stretch",
                     )
             except Exception:
                 pass

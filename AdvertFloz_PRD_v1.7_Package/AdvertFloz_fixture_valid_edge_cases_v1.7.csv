@@ -1,0 +1,6 @@
+﻿post_id,scheduled_at,timezone,platforms,image_id,caption,enabled,campaign_tag,facebook_caption,instagram_caption,alt_text,destination_url,grace_minutes,ai_disclosure_status,notes
+P001,2027-01-01T09:00:00,Asia/Kolkata,facebook,1,"English caption, with comma.",false,fixture,Facebook caption,Instagram fallback,Alt text,,,not_reviewed,valid punctuation
+P002,2027-01-02T09:00:00,Asia/Kolkata,instagram,2,"தமிழ் + emoji 🌟 caption
+Second line.",false,fixture,,"தமிழ் + emoji 🌟 caption
+Second line.",Tamil and emoji sample,,not_reviewed,valid UTF-8 multiline caption
+P003,2027-01-03T09:00:00,Asia/Kolkata,facebook;instagram,3,"Quoted ""caption"" sample.",false,fixture,"Quoted ""caption"" sample.","Quoted ""caption"" sample.",,https://example.com/,,not_reviewed,URL placeholder requires replacement before real use

@@ -1,0 +1,3 @@
+﻿post_id,scheduled_at,timezone,platforms,image_id,caption,enabled,campaign_tag,facebook_caption,instagram_caption,alt_text,destination_url,grace_minutes,ai_disclosure_status,notes
+P001,2027-01-01T09:00:00,Asia/Kolkata,facebook,1,Sample caption fallback.,false,sample_2027,Sample Facebook caption; verify URL before real use.,Sample Instagram caption. Use link in bio.,Abstract paper observatory illustration.,,,not_reviewed,Template example only.
+P002,2027-01-02T09:00:00,Asia/Kolkata,facebook;instagram,2,Sample generic caption.,false,sample_2027,Sample Facebook caption with verified HTTPS link if needed.,Sample Instagram-specific caption; link in bio.,Abstract layered editorial cards.,https://example.com/,,not_reviewed,example.com is placeholder; replace before publishing.

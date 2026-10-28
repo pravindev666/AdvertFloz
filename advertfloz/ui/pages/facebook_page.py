@@ -77,9 +77,9 @@ def render() -> None:
         st.write("")
         st.write("")
         oauth_start_url = f"{settings.worker_base_url.rstrip('/')}/oauth/meta/start" if settings.worker_configured else "#"
-        st.link_button("🔗 Reconnect / Switch Meta Account", oauth_start_url, use_container_width=True)
+        st.link_button("🔗 Reconnect / Switch Meta Account", oauth_start_url, width="stretch")
 
-        if st.button("🔄 Sync Pages from Meta", use_container_width=True):
+        if st.button("🔄 Sync Pages from Meta", width="stretch"):
             with st.spinner("Fetching pages from Meta…"):
                 res = sync_meta_pages(repo, settings)
                 if res and res.get("pages"):
@@ -125,7 +125,7 @@ def render() -> None:
                 "Remote Post ID": j.remote_post_id or "—",
                 "Last Updated": str(j.updated_at)[:19] if j.updated_at else "—",
             })
-        st.dataframe(table_rows, use_container_width=True)
+        st.dataframe(table_rows, width="stretch")
 
     # Permissions summary
     with st.expander("ℹ️ Facebook Permissions & Scopes"):

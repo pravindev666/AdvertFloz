@@ -63,9 +63,9 @@ def render() -> None:
 
     with col_oauth:
         oauth_start_url = f"{settings.worker_base_url.rstrip('/')}/oauth/meta/start" if settings.worker_configured else "#"
-        st.link_button("🔗 Connect / Re-authorize Meta", oauth_start_url, use_container_width=True)
+        st.link_button("🔗 Connect / Re-authorize Meta", oauth_start_url, width="stretch")
 
-        if st.button("🔍 Discover Linked Account", use_container_width=True, help="Scan connected Facebook Pages for linked Instagram accounts"):
+        if st.button("🔍 Discover Linked Account", width="stretch", help="Scan connected Facebook Pages for linked Instagram accounts"):
             with st.spinner("Checking Meta Graph API for linked Instagram accounts…"):
                 res = call_worker(settings, "/api/meta/pages")
                 if res and res.get("pages"):
@@ -126,18 +126,18 @@ def render() -> None:
                 "Remote Post ID": j.remote_post_id or "—",
                 "Last Error": (j.last_error_class.value if j.last_error_class else "—") if "FAIL" in status_val else "—",
             })
-        st.dataframe(table_rows, use_container_width=True)
+        st.dataframe(table_rows, width="stretch")
 
     # Emergency Control
     st.markdown("---")
     st.markdown("#### ⏸️ Instagram Platform Controls")
     cu1, cu2 = st.columns(2)
     with cu1:
-        if st.button("⏸️ Pause Instagram Deliveries", use_container_width=True):
+        if st.button("⏸️ Pause Instagram Deliveries", width="stretch"):
             repo.pause("instagram", actor="operator")
             st.warning("Instagram publishing paused. Facebook remains unaffected.")
     with cu2:
-        if st.button("▶️ Resume Instagram Deliveries", use_container_width=True):
+        if st.button("▶️ Resume Instagram Deliveries", width="stretch"):
             repo.resume("instagram", actor="operator")
             st.success("Instagram publishing resumed.")
 

@@ -81,7 +81,7 @@ def enforce_hosted_gate() -> bool:
             st.caption("This AdvertFloz dashboard is private. Enter your master access key to unlock the campaign command center.")
             with st.form("afz_login_form"):
                 pwd_input = st.text_input("Master Access Key / Password", type="password", placeholder="Enter your secret key...")
-                submitted = st.form_submit_button("Unlock Command Center", type="primary", use_container_width=True)
+                submitted = st.form_submit_button("Unlock Command Center", type="primary", width="stretch")
                 if submitted:
                     expected = settings.secret("ADVERTFLOZ_ADMIN_PASSWORD")
                     if pwd_input and expected and hmac.compare_digest(pwd_input.strip(), expected.strip()):

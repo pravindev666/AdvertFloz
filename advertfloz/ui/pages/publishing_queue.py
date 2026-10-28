@@ -37,7 +37,7 @@ def render() -> None:
     if campaigns and draft_count > 0:
         latest_camp = campaigns[-1]
         rev = repo.latest_revision(latest_camp.campaign_id)
-        if c_push1.button(f"Queue {draft_count} Posts & Push to Cloudflare Worker", type="primary", use_container_width=True):
+        if c_push1.button(f"Queue {draft_count} Posts & Push to Cloudflare Worker", type="primary", width="stretch"):
             with st.spinner("Uploading images to Cloudflare R2 & syncing schedule to D1..."):
                 from advertfloz.infrastructure.worker_client import activate_and_push_campaign
                 res = activate_and_push_campaign(repo, settings, latest_camp.campaign_id, rev.revision_id if rev else 1)
@@ -49,7 +49,7 @@ def render() -> None:
     else:
         c_push1.info(f"All {sum(counts.values())} jobs are already queued or published.")
 
-    if c_push2.button("⚡ Publish Due Post Now", help="Ask Cloudflare Worker to immediately publish any post whose time has arrived", use_container_width=True):
+    if c_push2.button("⚡ Publish Due Post Now", help="Ask Cloudflare Worker to immediately publish any post whose time has arrived", width="stretch"):
         with st.spinner("Calling Cloudflare Worker tick..."):
             from advertfloz.infrastructure.worker_client import trigger_worker_tick
             tick_res = trigger_worker_tick(settings)

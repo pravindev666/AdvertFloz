@@ -93,7 +93,7 @@ def _sidebar_frame() -> None:
         if st.session_state.get("afz_authenticated"):
             user_lbl = st.session_state.get("afz_user_email") or "Operator"
             st.caption(f"🔒 Authenticated: {user_lbl}")
-            if st.button("Sign Out / Lock", key="afz_signout_btn", use_container_width=True):
+            if st.button("Sign Out / Lock", key="afz_signout_btn", width="stretch"):
                 st.session_state["afz_authenticated"] = False
                 st.session_state.pop("afz_user_email", None)
                 st.rerun()

@@ -226,7 +226,7 @@ def render() -> None:
         elif step.endswith("Review"):
             if result.ok and result.mapping_complete():
                 st.markdown("### Step 5: Review & Commit")
-                if st.button("🚀 Commit Campaign Revision", type="primary", use_container_width=True):
+                if st.button("🚀 Commit Campaign Revision", type="primary", width="stretch"):
                     revision = commit_import(repo, result)
                     st.success(f"🎉 Committed campaign revision {revision}! All posts are scheduled and ready to view.")
                     st.info("👉 Check the **Calendar** in the sidebar to review your scheduled posts, 3x3 Instagram grid, and timeline.")

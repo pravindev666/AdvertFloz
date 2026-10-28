@@ -191,19 +191,38 @@ class Repository:
             "SELECT * FROM posts WHERE campaign_id=? AND revision_id=? AND post_id=?",
             (campaign_id, revision_id, post_id),
         ).fetchone()
+        if not row:
+            row = self.conn.execute(
+                "SELECT * FROM posts WHERE campaign_id=? AND post_id=? ORDER BY revision_id DESC LIMIT 1",
+                (campaign_id, post_id),
+            ).fetchone()
         return self._row_to_post(row) if row else None
 
-    def list_posts(self, campaign_id: str, revision_id: int) -> list[Post]:
+    def list_posts(self, campaign_id: str, revision_id: int | None = None) -> list[Post]:
+        if revision_id is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM posts WHERE campaign_id=? AND revision_id=? ORDER BY post_id", (campaign_id, revision_id)
+            ).fetchall()
+            if rows:
+                return [self._row_to_post(r) for r in rows]
         rows = self.conn.execute(
-            "SELECT * FROM posts WHERE campaign_id=? AND revision_id=? ORDER BY post_id", (campaign_id, revision_id)
+            "SELECT * FROM posts WHERE campaign_id=? ORDER BY revision_id DESC, post_id", (campaign_id,)
         ).fetchall()
-        return [self._row_to_post(r) for r in rows]
+        if rows:
+            latest_found_rev = rows[0]["revision_id"]
+            return [self._row_to_post(r) for r in rows if r["revision_id"] == latest_found_rev]
+        return []
 
     def set_post_enabled(self, campaign_id: str, revision_id: int, post_id: str, enabled: bool) -> None:
-        self.conn.execute(
+        cur = self.conn.execute(
             "UPDATE posts SET enabled=?, updated_at=? WHERE campaign_id=? AND revision_id=? AND post_id=?",
             (1 if enabled else 0, _now(), campaign_id, revision_id, post_id),
         )
+        if cur.rowcount == 0:
+            self.conn.execute(
+                "UPDATE posts SET enabled=?, updated_at=? WHERE campaign_id=? AND post_id=?",
+                (1 if enabled else 0, _now(), campaign_id, post_id),
+            )
 
     def update_post_schedule(self, campaign_id: str, revision_id: int, post_id: str, scheduled_at: str, timezone_name: str) -> None:
         self.conn.execute(

@@ -254,9 +254,9 @@ def render() -> None:
                                 else:
                                     new_posts.append(p)
                             res.posts = new_posts
-                            commit_import(repo, res, campaign_name=active_id)
+                            new_rev_id = commit_import(repo, res, campaign_name=active_id)
                             st.session_state["qc_committed"] = True
-                            db_posts = repo.list_posts(active_id, 1)
+                            db_posts = repo.list_posts(active_id, new_rev_id)
 
                         st.success(f"🎉 **Validation Successful!** {len(res.posts)} posts loaded with {len(res.assets)} companion images into pipeline `{active_id}`.")
                         if res.warnings:
@@ -276,7 +276,8 @@ def render() -> None:
                 st.session_state["qc_step"] = 1
                 st.rerun()
         with next_c:
-            curr_posts = repo.list_posts(active_id, 1) if repo.get_campaign(active_id) else []
+            curr_rev = repo.latest_revision(active_id) if repo.get_campaign(active_id) else None
+            curr_posts = repo.list_posts(active_id, curr_rev.revision_id if curr_rev else 1) if repo.get_campaign(active_id) else []
             has_posts = len(curr_posts) > 0 or st.session_state.get("qc_assembled_res") is not None
             if st.button("Next: Review & Previews ➡️", type="primary", width="stretch", disabled=not has_posts):
                 # Ensure committed before advancing
@@ -295,6 +296,18 @@ def render() -> None:
         campaign = repo.get_campaign(active_id)
         rev = repo.latest_revision(active_id) if campaign else None
         posts = repo.list_posts(active_id, rev.revision_id if rev else 1) if campaign else []
+
+        # Seamless recovery: if posts not yet in DB but assembled in session, commit now
+        if not posts and st.session_state.get("qc_assembled_res"):
+            try:
+                commit_import(repo, st.session_state["qc_assembled_res"], campaign_name=active_id)
+                st.session_state["qc_committed"] = True
+                campaign = repo.get_campaign(active_id)
+                rev = repo.latest_revision(active_id) if campaign else None
+                posts = repo.list_posts(active_id, rev.revision_id if rev else 1) if campaign else []
+            except Exception:
+                pass
+
         all_assets = repo.list_assets()
         # Filter assets to only those belonging to THIS campaign's posts
         # (consistent with Step 5 filtering logic)
@@ -355,6 +368,9 @@ def render() -> None:
                 f"data/media/{sample_post.image_id}",
             ]
             sample_img = next((c for c in candidates if Path(c).exists()), None)
+            if not sample_img and st.session_state.get("qc_zip_data"):
+                _extract_zips_to_media(st.session_state["qc_zip_data"])
+                sample_img = next((c for c in candidates if Path(c).exists()), None)
 
         tab_fb, tab_ig = st.tabs(["📘 Facebook Feed Preview", "📸 Instagram Post Preview"])
 

@@ -6,6 +6,7 @@ created in ``DRAFT``/``VALIDATION_BLOCKED`` only.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import UTC, datetime
 
@@ -70,7 +71,11 @@ def commit_import(
     revision_id = repo.create_revision(result.campaign_id, manifest_hash(result), created_by=created_by)
 
     asset_ids_in_zip = set(result.assets)
+    updated_posts = []
     for post in result.posts:
+        if post.revision_id != revision_id:
+            post = dataclasses.replace(post, revision_id=revision_id)
+        updated_posts.append(post)
         repo.upsert_post(post)
         asset = repo.get_asset(post.image_id)
         if post.image_id in asset_ids_in_zip:
@@ -105,6 +110,7 @@ def commit_import(
                     idempotency_key=job_key(post.campaign_id, revision_id, post.post_id, platform),
                 )
             )
+    result.posts = updated_posts
 
     repo.audit(created_by, "import.commit", f"{result.campaign_id}@{revision_id}", f"{len(result.posts)} posts, {len(result.assets)} images")
     return revision_id

@@ -136,6 +136,7 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   if (path === "/api/media/upload" && request.method === "POST") {
     try {
       const payload: any = await request.json();
+      const campaignId = String(payload.campaign_id || "").trim();
       const imageId = Number(payload.image_id);
       const filename = String(payload.filename || `${imageId}.jpg`);
       const mime = String(payload.mime || "image/jpeg");
@@ -150,29 +151,70 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
       const bytes = new Uint8Array(binaryStr.length);
       for (let i = 0; i < binaryStr.length; i += 1) bytes[i] = binaryStr.charCodeAt(i);
 
-      const objectKey = `${imageId}_${filename}`;
+      // Campaign-scoped R2 key prevents collisions across multiple campaigns
+      const objectKey = campaignId ? `${campaignId}/${imageId}_${filename}` : `${imageId}_${filename}`;
       await env.MEDIA.put(objectKey, bytes.buffer, {
         httpMetadata: { contentType: mime },
       });
 
       const now = new Date().toISOString();
-      await env.DB.prepare(
-        `INSERT INTO media_assets (image_id, filename, sha256, byte_size, mime, remote_object_key, production_state, sync_state, approved, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'approved', 'synced', 1, ?, ?)
-         ON CONFLICT(image_id) DO UPDATE SET
-           filename = excluded.filename,
-           sha256 = excluded.sha256,
-           byte_size = excluded.byte_size,
-           mime = excluded.mime,
-           remote_object_key = excluded.remote_object_key,
-           sync_state = 'synced',
-           approved = 1,
-           updated_at = excluded.updated_at`
-      )
-        .bind(imageId, filename, sha256, bytes.byteLength, mime, objectKey, now, now)
-        .run();
 
-      return json({ ok: true, image_id: imageId, remote_object_key: objectKey });
+      // Ensure campaign_media table exists for campaign isolation
+      try {
+        await env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS campaign_media (
+             campaign_id TEXT NOT NULL,
+             image_id INTEGER NOT NULL,
+             filename TEXT NOT NULL,
+             remote_object_key TEXT NOT NULL,
+             sha256 TEXT NOT NULL DEFAULT '',
+             byte_size INTEGER NOT NULL DEFAULT 0,
+             mime TEXT NOT NULL DEFAULT 'image/jpeg',
+             created_at TEXT NOT NULL,
+             PRIMARY KEY (campaign_id, image_id)
+           )`
+        ).run();
+
+        if (campaignId) {
+          await env.DB.prepare(
+            `INSERT INTO campaign_media (campaign_id, image_id, filename, remote_object_key, sha256, byte_size, mime, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(campaign_id, image_id) DO UPDATE SET
+               filename = excluded.filename,
+               remote_object_key = excluded.remote_object_key,
+               sha256 = excluded.sha256,
+               byte_size = excluded.byte_size,
+               mime = excluded.mime`
+          )
+            .bind(campaignId, imageId, filename, objectKey, sha256, bytes.byteLength, mime, now)
+            .run();
+        }
+      } catch {
+        // Continue if table setup encounters issues
+      }
+
+      // Maintain legacy media_assets table for backwards compatibility
+      try {
+        await env.DB.prepare(
+          `INSERT INTO media_assets (image_id, filename, sha256, byte_size, mime, remote_object_key, production_state, sync_state, approved, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'approved', 'synced', 1, ?, ?)
+           ON CONFLICT(image_id) DO UPDATE SET
+             filename = excluded.filename,
+             sha256 = excluded.sha256,
+             byte_size = excluded.byte_size,
+             mime = excluded.mime,
+             remote_object_key = excluded.remote_object_key,
+             sync_state = 'synced',
+             approved = 1,
+             updated_at = excluded.updated_at`
+        )
+          .bind(imageId, filename, sha256, bytes.byteLength, mime, objectKey, now, now)
+          .run();
+      } catch {
+        // Ignore if legacy table conflicts
+      }
+
+      return json({ ok: true, image_id: imageId, remote_object_key: objectKey, campaign_id: campaignId });
     } catch (err: any) {
       return json({ error: String(err?.message || err) }, 500);
     }

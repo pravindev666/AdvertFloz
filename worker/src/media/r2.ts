@@ -41,12 +41,41 @@ export async function verifyMediaRequest(env: Env, objectKey: string, expires: s
   return diff === 0;
 }
 
-export async function mediaUrlFor(env: Env, imageId: number): Promise<string> {
-  const row = await env.DB.prepare("SELECT remote_object_key FROM media_assets WHERE image_id = ?")
-    .bind(imageId)
-    .first<{ remote_object_key: string }>();
-  if (!row?.remote_object_key) return "";
-  return signMediaKey(env, row.remote_object_key);
+export async function mediaUrlFor(env: Env, imageId: number, campaignId?: string): Promise<string> {
+  // 1. Try campaign-scoped lookup first
+  if (campaignId) {
+    try {
+      const campRow = await env.DB.prepare(
+        "SELECT remote_object_key FROM campaign_media WHERE campaign_id = ? AND image_id = ?"
+      )
+        .bind(campaignId, imageId)
+        .first<{ remote_object_key: string }>();
+      if (campRow?.remote_object_key) {
+        return signMediaKey(env, campRow.remote_object_key);
+      }
+    } catch {
+      // Table may not exist yet on legacy setups
+    }
+  }
+
+  // 2. Fall back to global media_assets table
+  try {
+    const row = await env.DB.prepare("SELECT remote_object_key FROM media_assets WHERE image_id = ?")
+      .bind(imageId)
+      .first<{ remote_object_key: string }>();
+    if (row?.remote_object_key) {
+      return signMediaKey(env, row.remote_object_key);
+    }
+  } catch {
+    // DB lookup error
+  }
+
+  // 3. Fall back to conventional campaign path if campaignId provided
+  if (campaignId) {
+    return signMediaKey(env, `${campaignId}/${imageId}_${imageId}.jpg`);
+  }
+
+  return "";
 }
 
 export async function serveMedia(env: Env, objectKey: string, expires: string, signature: string): Promise<Response> {

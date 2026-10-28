@@ -120,6 +120,7 @@ def upload_media_to_worker(
     data: bytes,
     mime: str = "image/jpeg",
     sha256: str = "",
+    campaign_id: str = "",
 ) -> str | None:
     """Upload media binary to R2 through worker and update local sync state."""
     import base64
@@ -128,6 +129,7 @@ def upload_media_to_worker(
 
     b64_data = base64.b64encode(data).decode("ascii")
     payload = json.dumps({
+        "campaign_id": campaign_id,
         "image_id": image_id,
         "filename": filename,
         "mime": mime,
@@ -136,7 +138,8 @@ def upload_media_to_worker(
     })
     res = call_worker(settings, "/api/media/upload", method="POST", body=payload)
     if res and res.get("ok"):
-        remote_key = res.get("remote_object_key", f"{image_id}_{filename}")
+        default_key = f"{campaign_id}/{image_id}_{filename}" if campaign_id else f"{image_id}_{filename}"
+        remote_key = res.get("remote_object_key", default_key)
         repo.update_sync_state(image_id, SyncState.SYNCED, remote_object_key=remote_key)
         return remote_key
     return None
@@ -235,10 +238,12 @@ def activate_and_push_campaign(
     posts = repo.list_posts(campaign_id, revision_id)
     assets = repo.list_assets()
 
-    # 1. Upload local images to Cloudflare R2
+    # 1. Upload local images to Cloudflare R2 (scoped to this campaign)
     uploaded_images = 0
     media_path = Path(media_dir)
-    for asset in assets:
+    post_img_ids = {p.image_id for p in posts}
+    target_assets = [a for a in assets if a.image_id in post_img_ids] if posts else assets
+    for asset in target_assets:
         candidates = [
             media_path / f"{asset.image_id}.jpg",
             media_path / asset.filename,
@@ -248,7 +253,15 @@ def activate_and_push_campaign(
         if img_file and img_file.is_file():
             try:
                 data = img_file.read_bytes()
-                key = upload_media_to_worker(repo, settings, asset.image_id, f"{asset.image_id}.jpg", data, sha256=asset.sha256)
+                key = upload_media_to_worker(
+                    repo,
+                    settings,
+                    asset.image_id,
+                    f"{asset.image_id}.jpg",
+                    data,
+                    sha256=asset.sha256,
+                    campaign_id=campaign_id,
+                )
                 if key:
                     uploaded_images += 1
             except Exception:

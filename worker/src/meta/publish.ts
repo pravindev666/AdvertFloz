@@ -69,7 +69,7 @@ interface JobLike {
   container_id?: string;
 }
 
-async function pageAndIgTargets(env: Env, job: JobLike): Promise<{ pageId: string; igId: string; caption: string; imageId: number }> {
+async function pageAndIgTargets(env: Env, job: JobLike): Promise<{ pageId: string; igId: string; caption: string; imageId: number; campaignId: string }> {
   const post = await env.DB.prepare(
     "SELECT image_id, caption, facebook_caption, instagram_caption FROM posts WHERE campaign_id=? AND revision_id=? AND post_id=?",
   )
@@ -80,12 +80,12 @@ async function pageAndIgTargets(env: Env, job: JobLike): Promise<{ pageId: strin
     : post?.instagram_caption || post?.caption || "";
   const fb = await env.DB.prepare("SELECT page_id FROM connections WHERE provider='facebook'").first<{ page_id: string }>();
   const ig = await env.DB.prepare("SELECT account_id FROM connections WHERE provider='instagram'").first<{ account_id: string }>();
-  return { pageId: fb?.page_id ?? "", igId: ig?.account_id ?? "", caption, imageId: post?.image_id ?? 0 };
+  return { pageId: fb?.page_id ?? "", igId: ig?.account_id ?? "", caption, imageId: post?.image_id ?? 0, campaignId: job.campaign_id };
 }
 
 export async function publishFacebookPhoto(env: Env, job: JobLike, token: string): Promise<Outcome> {
-  const { pageId, caption, imageId } = await pageAndIgTargets(env, job);
-  const mediaUrl = await mediaUrlFor(env, imageId);
+  const { pageId, caption, imageId, campaignId } = await pageAndIgTargets(env, job);
+  const mediaUrl = await mediaUrlFor(env, imageId, campaignId);
   if (!pageId || !mediaUrl) {
     return { ok: false, remoteId: "", permalink: "", errorClass: "auth", summary: "missing page target or media URL" };
   }
@@ -116,8 +116,8 @@ export async function publishFacebookPhoto(env: Env, job: JobLike, token: string
 }
 
 export async function createContainer(env: Env, job: JobLike, token: string): Promise<Outcome & { containerId: string }> {
-  const { igId, caption, imageId } = await pageAndIgTargets(env, job);
-  const mediaUrl = await mediaUrlFor(env, imageId);
+  const { igId, caption, imageId, campaignId } = await pageAndIgTargets(env, job);
+  const mediaUrl = await mediaUrlFor(env, imageId, campaignId);
   if (!igId || !mediaUrl) {
     return { ok: false, containerId: "", remoteId: "", permalink: "", errorClass: "auth", summary: "missing IG target or media URL" };
   }

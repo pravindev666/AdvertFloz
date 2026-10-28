@@ -228,9 +228,12 @@ def activate_and_push_campaign(
     campaign_id: str,
     revision_id: int,
     media_dir: Path | str = "data/media",
+    zip_data: list[tuple[str, bytes]] | None = None,
 ) -> dict[str, Any]:
     """Activate all draft jobs, upload local media to R2, and sync campaign to Cloudflare D1."""
+    import io
     from pathlib import Path
+    import zipfile
     from advertfloz.domain.enums import JobStatus, ProductionState
 
     campaign = repo.get_campaign(campaign_id)
@@ -241,18 +244,46 @@ def activate_and_push_campaign(
     # 1. Upload local images to Cloudflare R2 (scoped to this campaign)
     uploaded_images = 0
     media_path = Path(media_dir)
+    media_path.mkdir(parents=True, exist_ok=True)
     post_img_ids = {p.image_id for p in posts}
     target_assets = [a for a in assets if a.image_id in post_img_ids] if posts else assets
     for asset in target_assets:
         candidates = [
             media_path / f"{asset.image_id}.jpg",
+            media_path / f"{asset.image_id}.jpeg",
+            media_path / f"{asset.image_id}.png",
             media_path / asset.filename,
             Path(asset.local_path) if asset.local_path else None,
         ]
         img_file = next((c for c in candidates if c and c.exists()), None)
+        data: bytes | None = None
         if img_file and img_file.is_file():
             try:
                 data = img_file.read_bytes()
+            except Exception:
+                pass
+
+        # In-memory fallback if local ephemeral disk was wiped (e.g. Streamlit Cloud container sleep)
+        if not data and zip_data:
+            for _, zbytes in zip_data:
+                try:
+                    with zipfile.ZipFile(io.BytesIO(zbytes), "r") as zf:
+                        for member in zf.infolist():
+                            fn = Path(member.filename).name.lower()
+                            if fn in (f"{asset.image_id}.jpg", f"{asset.image_id}.jpeg", f"{asset.image_id}.png", asset.filename.lower()):
+                                data = zf.read(member.filename)
+                                try:
+                                    (media_path / f"{asset.image_id}.jpg").write_bytes(data)
+                                except Exception:
+                                    pass
+                                break
+                except Exception:
+                    pass
+                if data:
+                    break
+
+        if data:
+            try:
                 key = upload_media_to_worker(
                     repo,
                     settings,

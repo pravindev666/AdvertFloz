@@ -535,11 +535,23 @@ def render() -> None:
         chk3 = len(posts) > 0
         chk4 = chk3 and all(a.approved for a in campaign_assets) if campaign_assets else False
 
-        v1, v2, v3, v4 = st.columns(4)
+        # Verify media availability on ephemeral disk or in memory session
+        media_path = Path("data/media")
+        has_session_zip = bool(st.session_state.get("qc_zip_data"))
+        disk_images_present = sum(1 for a in campaign_assets if any((media_path / f"{a.image_id}.{ext}").exists() for ext in ("jpg", "jpeg", "png"))) if campaign_assets else 0
+        chk5 = (disk_images_present > 0 or has_session_zip) if campaign_assets else True
+
+        # Auto-restore to disk if wiped
+        if disk_images_present == 0 and has_session_zip:
+            _extract_zips_to_media(st.session_state["qc_zip_data"])
+            disk_images_present = sum(1 for a in campaign_assets if any((media_path / f"{a.image_id}.{ext}").exists() for ext in ("jpg", "jpeg", "png"))) if campaign_assets else 0
+
+        v1, v2, v3, v4, v5 = st.columns(5)
         v1.markdown(f"**Target Page**: {'✅ ' + conn.page_name if chk1 else '❌ Missing'}")
         v2.markdown(f"**Worker & R2**: {'✅ Connected' if chk2 else '❌ Not configured'}")
         v3.markdown(f"**Content Posts**: {'✅ ' + str(len(posts)) + ' posts' if chk3 else '❌ None'}")
         v4.markdown(f"**Images Approved**: {'✅ All approved' if chk4 else '⚠️ Pending'}")
+        v5.markdown(f"**Media Cache**: {'✅ Ready' if chk5 else '❌ Missing ZIP'}")
 
         # Inline helpers if posts are missing or images need approval
         if not chk3:
@@ -549,6 +561,15 @@ def render() -> None:
                 "Please go back to Step 2 to re-upload your CSV and ZIP."
             )
             if st.button("⬅️ Return to Step 2 to Re-upload", type="primary"):
+                st.session_state["qc_step"] = 2
+                st.rerun()
+        elif not chk5:
+            st.error(
+                "❌ Campaign images are missing from server cache. "
+                "This can occur if the cloud container restarted. "
+                "Please go back to Step 2 and attach your companion ZIP archive before scheduling."
+            )
+            if st.button("⬅️ Return to Step 2 to Attach ZIP", type="primary"):
                 st.session_state["qc_step"] = 2
                 st.rerun()
         elif not chk4 and campaign_assets:
@@ -565,7 +586,7 @@ def render() -> None:
 
         st.markdown("---")
 
-        all_ready = chk1 and chk2 and chk3 and chk4
+        all_ready = chk1 and chk2 and chk3 and chk4 and chk5
 
         if all_ready:
             st.success("🎉 All preflight checks passed! Ready to schedule and push to Cloudflare.")
@@ -581,6 +602,7 @@ def render() -> None:
                         settings,
                         active_id,
                         rev.revision_id if rev else 1,
+                        zip_data=st.session_state.get("qc_zip_data"),
                     )
                     fetch_worker_jobs(repo, settings)
 

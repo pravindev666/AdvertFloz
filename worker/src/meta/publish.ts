@@ -11,6 +11,7 @@ export interface Outcome {
   permalink: string;
   errorClass: string;
   summary: string;
+  rawPayload?: any;
 }
 
 const OK: Outcome = { ok: true, remoteId: "", permalink: "", errorClass: "unknown", summary: "" };
@@ -56,9 +57,10 @@ async function call(env: Env, method: "GET" | "POST", path: string, token: strin
       ok: false, remoteId: "", permalink: "",
       errorClass: classify(response.status, payload),
       summary: `status=${response.status} code=${payload?.error?.code ?? ""}`,
+      rawPayload: payload,
     };
   }
-  return { ...OK, remoteId: payload.id ?? payload.post_id ?? "", permalink: payload.permalink ?? "" };
+  return { ...OK, remoteId: payload.id ?? payload.post_id ?? "", permalink: payload.permalink ?? "", rawPayload: payload };
 }
 
 interface JobLike {
@@ -127,7 +129,28 @@ export async function createContainer(env: Env, job: JobLike, token: string): Pr
 
 export async function containerStatus(env: Env, job: JobLike, token: string): Promise<Outcome & { status: string }> {
   const outcome = await call(env, "GET", `${job.container_id}`, token, { fields: "status_code" });
-  return { ...outcome, status: outcome.ok ? "IN_PROGRESS" : "ERROR" };
+  if (!outcome.ok) {
+    return { ...outcome, status: "ERROR" };
+  }
+  const rawStatus = String(outcome.rawPayload?.status_code || "").toUpperCase().trim();
+  // Meta Instagram Graph API status_code values: "FINISHED", "IN_PROGRESS", "ERROR", "EXPIRED"
+  if (rawStatus === "FINISHED") {
+    return { ...outcome, status: "FINISHED" };
+  }
+  if (rawStatus === "IN_PROGRESS") {
+    return { ...outcome, status: "IN_PROGRESS" };
+  }
+  if (rawStatus === "ERROR" || rawStatus === "EXPIRED") {
+    return {
+      ...outcome,
+      ok: false,
+      errorClass: "payload",
+      summary: `Instagram media processing failed: ${rawStatus}`,
+      status: "ERROR",
+    };
+  }
+  // Fallback: If status_code is missing but request succeeded, consider FINISHED
+  return { ...outcome, status: rawStatus || "FINISHED" };
 }
 
 export async function publishContainer(env: Env, job: JobLike, token: string): Promise<Outcome> {

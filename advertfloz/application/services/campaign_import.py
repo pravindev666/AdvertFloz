@@ -208,6 +208,26 @@ def assemble_import(
                                 f"Unused image IDs in ZIPs: {extras[:30]}", severity=Severity.WARNING)
             )
 
+        # Validate Instagram aspect ratio compatibility (0.80 / 4:5 to 1.91:1)
+        for p in posts:
+            is_ig = any(getattr(pl, "value", str(pl)).lower() == "instagram" for pl in p.platforms)
+            if is_ig and p.image_id in assets:
+                info = assets[p.image_id]
+                if info.width > 0 and info.height > 0:
+                    ratio = info.width / info.height
+                    if ratio < 0.79 or ratio > 1.93:
+                        issues.append(
+                            ValidationIssue(
+                                None,
+                                "image_id",
+                                f"{p.image_id}.jpg",
+                                "image.instagram_aspect_ratio",
+                                f"Post {p.post_id} ({p.image_id}.jpg): Instagram requires an aspect ratio between 4:5 (0.80) and 1.91:1. "
+                                f"Current image is {info.width}x{info.height} (ratio {ratio:.2f}). Meta will reject this post.",
+                                severity=Severity.DANGER,
+                            )
+                        )
+
     if manifest_path is not None:
         issues.extend(_cross_check_manifest(manifest_path, len(posts)))
 

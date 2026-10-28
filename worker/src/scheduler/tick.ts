@@ -8,7 +8,7 @@
  */
 import type { Env } from "../env";
 import * as meta from "../meta/publish";
-import { openToken } from "../auth/crypto";
+import { openToken, sealToken } from "../auth/crypto";
 
 export const CLAIMABLE = ["QUEUED", "PROCESSING_MEDIA", "CLAIMED"];
 export const BASE_BACKOFF_SECONDS = 60;
@@ -167,13 +167,86 @@ async function raiseIncident(
     .run();
 }
 
+async function tryAutoRefreshToken(
+  env: Env,
+  provider: string,
+  connId: number,
+  parsed: any,
+): Promise<string | null> {
+  const currentToken = parsed?.user_token || parsed?.page_token;
+  if (!currentToken || !env.META_APP_ID || !env.META_APP_SECRET) {
+    return null;
+  }
+  try {
+    const refreshUrl = new URL(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/oauth/access_token`);
+    refreshUrl.searchParams.set("grant_type", "fb_exchange_token");
+    refreshUrl.searchParams.set("client_id", env.META_APP_ID);
+    refreshUrl.searchParams.set("client_secret", env.META_APP_SECRET);
+    refreshUrl.searchParams.set("fb_exchange_token", currentToken);
+
+    const resp = await fetch(refreshUrl.toString());
+    if (!resp.ok) return null;
+
+    const data: any = await resp.json();
+    if (!data?.access_token) return null;
+
+    const newUserToken = data.access_token;
+    let newPageToken = newUserToken;
+
+    try {
+      const pResp = await fetch(
+        `https://graph.facebook.com/${env.META_GRAPH_VERSION}/me/accounts?fields=id,name,access_token&access_token=${newUserToken}`
+      );
+      if (pResp.ok) {
+        const pData: any = await pResp.json();
+        const pages = pData?.data || [];
+        const match = pages.find((p: any) => p.id === parsed?.page_id) || pages[0];
+        if (match?.access_token) {
+          newPageToken = match.access_token;
+        }
+      }
+    } catch {
+      // Keep newUserToken if accounts discovery fails
+    }
+
+    const updatedPayload = JSON.stringify({
+      ...parsed,
+      user_token: newUserToken,
+      page_token: newPageToken,
+      refreshed_at: new Date().toISOString(),
+    });
+
+    const sealed = await sealToken(updatedPayload, env.TOKEN_ENCRYPTION_KEY, env.TOKEN_ENCRYPTION_KEY_ID ?? "k1");
+    await env.DB.prepare(
+      "UPDATE connection_tokens SET nonce = ?, ciphertext = ?, key_id = ?, created_at = ? WHERE connection_id = ?"
+    )
+      .bind(sealed.nonce, sealed.ciphertext, sealed.keyId, new Date().toISOString(), connId)
+      .run();
+
+    const newExpiry = data.expires_in
+      ? new Date(Date.now() + Number(data.expires_in) * 1000).toISOString()
+      : "";
+
+    await env.DB.prepare(
+      "UPDATE connections SET expires_at = ?, last_validated_at = ?, updated_at = ? WHERE connection_id = ?"
+    )
+      .bind(newExpiry, new Date().toISOString(), new Date().toISOString(), connId)
+      .run();
+
+    return newPageToken;
+  } catch (err) {
+    console.warn("Automated token renewal encountered error for provider:", provider, err);
+    return null;
+  }
+}
+
 async function resolvePlatformToken(env: Env, platform: string): Promise<string | null> {
   const provider = platform === "facebook" ? "facebook" : "instagram";
   const conn = await env.DB.prepare(
-    "SELECT connection_id, state FROM connections WHERE provider = ?"
+    "SELECT connection_id, state, expires_at FROM connections WHERE provider = ?"
   )
     .bind(provider)
-    .first<{ connection_id: number; state: string }>();
+    .first<{ connection_id: number; state: string; expires_at: string }>();
 
   if (!conn || (conn.state !== "ready" && conn.state !== "test_passed")) {
     return null;
@@ -192,13 +265,27 @@ async function resolvePlatformToken(env: Env, platform: string): Promise<string 
       { keyId: tokenRow.key_id, nonce: tokenRow.nonce, ciphertext: tokenRow.ciphertext },
       env.TOKEN_ENCRYPTION_KEY,
     );
+    let parsed: any = null;
     try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        return parsed.page_token || parsed.user_token || raw;
-      }
+      parsed = JSON.parse(raw);
     } catch {
       // raw token
+    }
+
+    // Proactively refresh if token expires within 14 days or is expired
+    if (conn.expires_at) {
+      const expiryMs = new Date(conn.expires_at).getTime();
+      const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+      if (Date.now() + fourteenDaysMs >= expiryMs) {
+        const refreshed = await tryAutoRefreshToken(env, provider, conn.connection_id, parsed || { page_token: raw });
+        if (refreshed) {
+          return refreshed;
+        }
+      }
+    }
+
+    if (parsed && typeof parsed === "object") {
+      return parsed.page_token || parsed.user_token || raw;
     }
     return raw;
   } catch (err) {
@@ -208,13 +295,23 @@ async function resolvePlatformToken(env: Env, platform: string): Promise<string 
 }
 
 async function dispatchFacebook(env: Env, job: JobRow, result: TickResult): Promise<void> {
-  const token = await resolvePlatformToken(env, "facebook");
+  let token = await resolvePlatformToken(env, "facebook");
   if (!token) {
     const label = await applyError(env, job, "auth", "missing or unreadable Facebook page access token");
     tally(result, label);
     return;
   }
-  const outcome = await meta.publishFacebookPhoto(env, job, token);
+  let outcome = await meta.publishFacebookPhoto(env, job, token);
+  if (!outcome.ok && outcome.errorClass === "auth") {
+    // Attempt automatic token renewal on auth expiration
+    const conn = await env.DB.prepare("SELECT connection_id FROM connections WHERE provider='facebook'").first<{ connection_id: number }>();
+    if (conn) {
+      const refreshed = await tryAutoRefreshToken(env, "facebook", conn.connection_id, { page_token: token });
+      if (refreshed) {
+        outcome = await meta.publishFacebookPhoto(env, job, refreshed);
+      }
+    }
+  }
   if (outcome.ok) {
     await env.DB.prepare(
       `UPDATE platform_jobs SET status='PUBLISHED', remote_post_id=?, permalink=?, attempt_count=attempt_count+1,
@@ -230,7 +327,7 @@ async function dispatchFacebook(env: Env, job: JobRow, result: TickResult): Prom
 }
 
 async function dispatchInstagram(env: Env, job: JobRow, result: TickResult): Promise<void> {
-  const token = (await resolvePlatformToken(env, "instagram")) || (await resolvePlatformToken(env, "facebook"));
+  let token = (await resolvePlatformToken(env, "instagram")) || (await resolvePlatformToken(env, "facebook"));
   if (!token) {
     const label = await applyError(env, job, "auth", "missing or unreadable Instagram/Facebook access token");
     tally(result, label);
@@ -238,7 +335,17 @@ async function dispatchInstagram(env: Env, job: JobRow, result: TickResult): Pro
   }
   const stage = job.last_stage || "CREATE_CONTAINER";
   if (stage === "CREATE_CONTAINER") {
-    const created = await meta.createContainer(env, job, token);
+    let created = await meta.createContainer(env, job, token);
+    if (!created.ok && created.errorClass === "auth") {
+      const conn = await env.DB.prepare("SELECT connection_id FROM connections WHERE provider IN ('instagram', 'facebook')").first<{ connection_id: number }>();
+      if (conn) {
+        const refreshed = await tryAutoRefreshToken(env, "instagram", conn.connection_id, { page_token: token });
+        if (refreshed) {
+          token = refreshed;
+          created = await meta.createContainer(env, job, token);
+        }
+      }
+    }
     if (!created.ok) {
       tally(result, await applyError(env, job, created.errorClass, created.summary));
       return;
@@ -254,8 +361,8 @@ async function dispatchInstagram(env: Env, job: JobRow, result: TickResult): Pro
   }
   if (stage === "CHECK_STATUS") {
     const status = await meta.containerStatus(env, job, token);
-    if (!status.ok) {
-      tally(result, await applyError(env, job, status.errorClass, status.summary));
+    if (!status.ok || status.status === "ERROR") {
+      tally(result, await applyError(env, job, status.errorClass || "payload", status.summary || "Instagram container failed to process"));
       return;
     }
     const next = status.status === "FINISHED" ? "PUBLISH" : "CHECK_STATUS";

@@ -94,7 +94,21 @@ async function handleApi(request: Request, env: Env, path: string): Promise<Resp
   }
   if (path === "/api/jobs") {
     const rows = await env.DB.prepare("SELECT * FROM platform_jobs ORDER BY due_at_utc LIMIT 500").all();
-    return json({ jobs: rows.results ?? [] });
+    let postsRows: any[] = [];
+    let campRows: any[] = [];
+    try {
+      const p = await env.DB.prepare("SELECT * FROM posts ORDER BY post_id LIMIT 500").all();
+      postsRows = p.results ?? [];
+    } catch {}
+    try {
+      const c = await env.DB.prepare("SELECT * FROM campaigns LIMIT 100").all();
+      campRows = c.results ?? [];
+    } catch {}
+    return json({
+      jobs: rows.results ?? [],
+      posts: postsRows,
+      campaigns: campRows,
+    });
   }
   if (path === "/api/jobs/force-due" && request.method === "POST") {
     try {

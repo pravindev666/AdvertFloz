@@ -326,11 +326,46 @@ def activate_and_push_campaign(
 
 def fetch_worker_jobs(repo: Repository, settings: Settings) -> list[dict[str, Any]]:
     """Fetch live job statuses from Cloudflare D1 and update/restore local SQLite repository."""
+    from datetime import datetime, timezone
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     if not settings.worker_configured:
         return []
     data = call_worker(settings, "/api/jobs")
     if not data or "jobs" not in data:
         return []
+
+    if "campaigns" in data and isinstance(data["campaigns"], list):
+        for c in data["campaigns"]:
+            try:
+                repo.conn.execute(
+                    "INSERT OR REPLACE INTO campaigns (campaign_id, name, campaign_tag, default_timezone, start_date, end_date, schema_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (c.get("campaign_id"), c.get("name") or c.get("campaign_id"), c.get("campaign_tag") or c.get("campaign_id"), c.get("default_timezone") or "Asia/Kolkata", c.get("start_date") or "", c.get("end_date") or "", c.get("schema_version") or "1.7", c.get("created_at") or now_iso),
+                )
+            except Exception:
+                pass
+
+    if "posts" in data and isinstance(data["posts"], list):
+        for p in data["posts"]:
+            try:
+                repo.conn.execute(
+                    """INSERT OR REPLACE INTO posts (post_id, campaign_id, revision_id, image_id, scheduled_at, timezone, platforms,
+                                                    caption, facebook_caption, instagram_caption, alt_text, destination_url,
+                                                    grace_minutes, campaign_tag, ai_disclosure_status, enabled, notes, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        p.get("post_id"), p.get("campaign_id"), p.get("revision_id") or 1, p.get("image_id") or 0,
+                        p.get("scheduled_at") or "", p.get("timezone") or "Asia/Kolkata", p.get("platforms") or "facebook",
+                        p.get("caption") or "", p.get("facebook_caption") or "", p.get("instagram_caption") or "",
+                        p.get("alt_text") or "", p.get("destination_url") or "", p.get("grace_minutes") or 60,
+                        p.get("campaign_tag") or "", p.get("ai_disclosure_status") or "not_reviewed",
+                        1 if p.get("enabled") else 0, p.get("notes") or "", p.get("updated_at") or now_iso,
+                    ),
+                )
+            except Exception:
+                pass
     for r in data["jobs"]:
         camp_id = str(r.get("campaign_id") or "campaign-1")
         rev_id = int(r.get("revision_id") or 1)
@@ -348,8 +383,17 @@ def fetch_worker_jobs(repo: Repository, settings: Settings) -> list[dict[str, An
         # 1. Restore campaign if missing locally
         try:
             repo.conn.execute(
-                "INSERT OR IGNORE INTO campaigns (campaign_id, name, created_at, default_timezone, start_date, end_date, schema_version) VALUES (?, ?, ?, 'Asia/Kolkata', '', '', '1.7')",
-                (camp_id, camp_id, created),
+                "INSERT OR IGNORE INTO campaigns (campaign_id, name, campaign_tag, created_at, default_timezone, start_date, end_date, schema_version) VALUES (?, ?, ?, ?, 'Asia/Kolkata', '', '', '1.7')",
+                (camp_id, camp_id, camp_id, created or now_iso),
+            )
+        except Exception:
+            pass
+
+        # 1b. Restore revision if missing locally
+        try:
+            repo.conn.execute(
+                "INSERT OR IGNORE INTO campaign_revisions (revision_id, campaign_id, manifest_hash, created_at, created_by, notes) VALUES (?, ?, 'restored', ?, 'worker', 'synced from D1')",
+                (rev_id, camp_id, created or now_iso),
             )
         except Exception:
             pass
